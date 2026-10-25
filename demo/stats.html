@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>[DÉMO] Guinée Carto — Avancement de la cartographie</title>
 <link rel="icon" type="image/png" href="icone-192.png">
-<meta name="theme-color" content="#0F2A22">
+<meta name="theme-color" content="#0F2140">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  :root { --vert: #0E7C5A; --vert-fonce: #0A5E44; --vert-clair: #E6F4EE; --texte: #17241F; --bord: #E1E7E3; --fond: #F3F6F4; --nuit: #0F2A22; --nuit-2: #17392E; --jaune: #F2B705; }
+  :root { --vert: #1F6FD1; --vert-fonce: #1758A8; --vert-clair: #E8F1FC; --texte: #16202E; --bord: #E2E7EE; --fond: #F3F6FA; --nuit: #0F2140; --nuit-2: #1A3260; --jaune: #F2B705; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--fond); color: var(--texte); -webkit-font-smoothing: antialiased; }
   header {
     background: linear-gradient(120deg, var(--nuit) 0%, var(--nuit-2) 100%); color: #fff;
@@ -25,37 +25,37 @@
   .cartes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 26px; }
   .carte {
     background: #fff; border-radius: 16px; padding: 16px 14px; display: flex; flex-direction: column; gap: 6px;
-    box-shadow: 0 1px 2px rgba(16,40,30,.06), 0 6px 18px rgba(16,40,30,.06);
+    box-shadow: 0 1px 2px rgba(15,30,50,.06), 0 6px 18px rgba(15,30,50,.06);
   }
   .carte .ico { width: 36px; height: 36px; border-radius: 10px; background: var(--vert-clair); display: flex; align-items: center; justify-content: center; font-size: 18px; }
   .carte .chiffre { font-size: 28px; font-weight: 800; color: var(--texte); line-height: 1.1; font-variant-numeric: tabular-nums; }
-  .carte .libelle { font-size: 12px; color: #6b7872; font-weight: 600; }
+  .carte .libelle { font-size: 12px; color: #667085; font-weight: 600; }
   /* Carte principale : contributions validées */
   .carte.principale { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 16px; padding: 20px;
-    background: linear-gradient(135deg, #0B5A41, var(--vert)); color: #fff; }
+    background: linear-gradient(135deg, #15509A, var(--vert)); color: #fff; }
   .carte.principale .ico { width: 52px; height: 52px; font-size: 26px; border-radius: 14px; }
   .carte.principale .ico { background: rgba(255,255,255,.18); }
   .carte.principale .chiffre { color: #fff; font-size: 40px; }
   .carte.principale .libelle { color: rgba(255,255,255,.85); }
 
-  .bloc { background: #fff; border-radius: 16px; padding: 18px 18px 8px; box-shadow: 0 1px 2px rgba(16,40,30,.06), 0 6px 18px rgba(16,40,30,.06); }
+  .bloc { background: #fff; border-radius: 16px; padding: 18px 18px 8px; box-shadow: 0 1px 2px rgba(15,30,50,.06), 0 6px 18px rgba(15,30,50,.06); }
   h2 { font-size: 16px; margin-bottom: 4px; }
-  .bloc .sous-titre { font-size: 12px; color: #7d8a83; margin-bottom: 14px; }
-  .barre-ligne { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid #f0f3f1; }
-  .rang { flex: 0 0 28px; height: 28px; border-radius: 50%; background: #f1f5f3; color: #5d6b64; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+  .bloc .sous-titre { font-size: 12px; color: #7A8496; margin-bottom: 14px; }
+  .barre-ligne { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid #EEF1F5; }
+  .rang { flex: 0 0 28px; height: 28px; border-radius: 50%; background: #EFF3F8; color: #5B6677; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
   .rang.r1 { background: #FCD116; color: #5a4600; }
   .rang.r2 { background: #e3e6e8; color: #444; }
   .rang.r3 { background: #f0d2b4; color: #6b3d12; }
   .barre-corps { flex: 1; min-width: 0; }
   .barre-tete { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
   .barre-tete .n { color: var(--vert-fonce); font-variant-numeric: tabular-nums; }
-  .barre-fond { background: #edf1ee; border-radius: 8px; height: 10px; overflow: hidden; }
-  .barre-rempli { background: linear-gradient(90deg, var(--vert), #27A57A); height: 100%; border-radius: 8px; width: 0; transition: width .8s cubic-bezier(.2,.8,.2,1); }
-  #vide { color: #7d8a83; font-size: 14px; text-align: center; padding: 24px 0 30px; line-height: 1.6; }
+  .barre-fond { background: #EAEFF5; border-radius: 8px; height: 10px; overflow: hidden; }
+  .barre-rempli { background: linear-gradient(90deg, var(--vert), #4A90E2); height: 100%; border-radius: 8px; width: 0; transition: width .8s cubic-bezier(.2,.8,.2,1); }
+  #vide { color: #7A8496; font-size: 14px; text-align: center; padding: 24px 0 30px; line-height: 1.6; }
   .retour { display: inline-block; margin-top: 26px; background: var(--vert); color: #fff; text-decoration: none;
     font-weight: 700; font-size: 14px; padding: 13px 24px; border-radius: 24px; box-shadow: 0 4px 14px rgba(0,60,38,.3); }
   .retour:hover { background: var(--vert-fonce); }
-  footer { text-align: center; font-size: 11px; color: #8a958f; padding: 16px; }
+  footer { text-align: center; font-size: 11px; color: #8A93A3; padding: 16px; }
   @media (max-width: 600px) {
     .cartes { grid-template-columns: repeat(2, 1fr); }
     header h1 { font-size: 20px; }
