@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>[DÉMO] Guinée Carto — Avancement de la cartographie</title>
 <link rel="icon" type="image/png" href="icone-192.png">
-<meta name="theme-color" content="#0F2140">
+<meta name="theme-color" content="#A84B08">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  :root { --vert: #1F6FD1; --vert-fonce: #1758A8; --vert-clair: #E8F1FC; --texte: #16202E; --bord: #E2E7EE; --fond: #F3F6FA; --nuit: #0F2140; --nuit-2: #1A3260; --jaune: #F2B705; }
+  :root { --vert: #C2570A; --vert-fonce: #9E4507; --vert-clair: #FDF0E6; --texte: #16202E; --bord: #E2E7EE; --fond: #F3F6FA; --nuit: #A84B08; --nuit-2: #D2650F; --jaune: #F2B705; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--fond); color: var(--texte); -webkit-font-smoothing: antialiased; }
   header {
     background: linear-gradient(120deg, var(--nuit) 0%, var(--nuit-2) 100%); color: #fff;
@@ -32,7 +32,7 @@
   .carte .libelle { font-size: 12px; color: #667085; font-weight: 600; }
   /* Carte principale : contributions validées */
   .carte.principale { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 16px; padding: 20px;
-    background: linear-gradient(135deg, #15509A, var(--vert)); color: #fff; }
+    background: linear-gradient(135deg, #6E2F04, #9E4507); color: #fff; box-shadow: 0 10px 28px rgba(80,30,0,.35); }
   .carte.principale .ico { width: 52px; height: 52px; font-size: 26px; border-radius: 14px; }
   .carte.principale .ico { background: rgba(255,255,255,.18); }
   .carte.principale .chiffre { color: #fff; font-size: 40px; }
@@ -50,7 +50,7 @@
   .barre-tete { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
   .barre-tete .n { color: var(--vert-fonce); font-variant-numeric: tabular-nums; }
   .barre-fond { background: #EAEFF5; border-radius: 8px; height: 10px; overflow: hidden; }
-  .barre-rempli { background: linear-gradient(90deg, var(--vert), #4A90E2); height: 100%; border-radius: 8px; width: 0; transition: width .8s cubic-bezier(.2,.8,.2,1); }
+  .barre-rempli { background: linear-gradient(90deg, var(--vert), #E8873A); height: 100%; border-radius: 8px; width: 0; transition: width .8s cubic-bezier(.2,.8,.2,1); }
   #vide { color: #7A8496; font-size: 14px; text-align: center; padding: 24px 0 30px; line-height: 1.6; }
   .retour { display: inline-block; margin-top: 26px; background: var(--vert); color: #fff; text-decoration: none;
     font-weight: 700; font-size: 14px; padding: 13px 24px; border-radius: 24px; box-shadow: 0 4px 14px rgba(0,60,38,.3); }
