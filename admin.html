@@ -9,14 +9,14 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   :root {
-    --vert: #1F6FD1; --vert-fonce: #1758A8; --vert-clair: #E8F1FC;
+    --vert: #C2570A; --vert-fonce: #9E4507; --vert-clair: #FDF0E6;
     --texte: #16202E; --bord: #E2E7EE; --fond: #F3F6FA;
-    --nuit: #0F2140; --nuit-2: #1A3260; --jaune: #F2B705;
+    --nuit: #A84B08; --nuit-2: #D2650F; --jaune: #F2B705;
     /* Couleurs de statut (mêmes teintes que l'application publique) */
-    --pin-attente: #E39B2D; --st-attente: #8F5A0B; --st-attente-bg: #FDF3E1;
+    --pin-attente: #3B7DD8; --st-attente: #1E4F96; --st-attente-bg: #E8F0FC;
     --pin-valide: #0E7C5A;  --st-valide: #0B5A41;  --st-valide-bg: #E6F4EE;
     --pin-rejete: #D9534F;  --st-rejete: #A33532;  --st-rejete-bg: #FCEDEC;
-    --pin-osm: #1d4f91;     --st-osm: #1d4f91;     --st-osm-bg: #e3ecfa;
+    --pin-osm: #6D4BB8;     --st-osm: #553A94;     --st-osm-bg: #F0EBFA;
   }
   body { color: var(--texte); -webkit-font-smoothing: antialiased; }
 
@@ -27,13 +27,13 @@
   }
   #appbar h1 { font-size: 17px; font-weight: 600; flex: 1; display: flex; align-items: center; gap: 8px; }
   #appbar h1 .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-    background: rgba(169,203,245,.16); color: #A9CBF5; padding: 3px 8px; border-radius: 20px; }
-  #appbar a { color: #A9CBF5; font-size: 13px; text-decoration: none; padding: 6px 10px; border-radius: 8px; }
+    background: rgba(255,255,255,.18); color: #FFE3CC; padding: 3px 8px; border-radius: 20px; }
+  #appbar a { color: #FFE3CC; font-size: 13px; text-decoration: none; padding: 6px 10px; border-radius: 8px; }
   #appbar a:hover { background: rgba(255,255,255,.08); }
 
   /* Connexion */
   #login { display: flex; align-items: center; justify-content: center; height: calc(100% - 56px);
-    background: radial-gradient(circle at 30% 20%, #E8F1FC 0%, var(--fond) 55%); padding: 16px; }
+    background: radial-gradient(circle at 30% 20%, #FDF0E6 0%, var(--fond) 55%); padding: 16px; }
   #login form { background: #fff; border-radius: 18px; padding: 30px 28px; width: 360px; box-shadow: 0 10px 34px rgba(15,30,50,.12); text-align: center; }
   #login .cadenas { width: 56px; height: 56px; border-radius: 16px; background: var(--vert-clair); font-size: 26px;
     display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
@@ -109,7 +109,7 @@
   .badge-statut.importe_osm { background: var(--st-osm-bg); color: var(--st-osm); }
   .comm-admin { background: #F3F6FA; border-radius: 4px 12px 12px 12px; padding: 8px 10px; margin: 6px 0; font-size: 12px; }
   .comm-admin-tete { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-  .comm-admin-aut { font-weight: 700; color: #1F6FD1; }
+  .comm-admin-aut { font-weight: 700; color: #C2570A; }
   .comm-admin-txt { color: #333; margin-top: 4px; line-height: 1.4; }
   .btn-del-comm { background: none; border: none; color: var(--pin-rejete); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 6px; }
   .btn-del-comm:hover { background: var(--st-rejete-bg); }
@@ -165,12 +165,12 @@
     flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 10px;
     font-size: 13px; background: #fff; box-shadow: 0 1px 5px rgba(0,0,0,.25);
   }
-  .recherche-box input:focus { outline: none; border-color: #1F6FD1; }
+  .recherche-box input:focus { outline: none; border-color: #C2570A; }
   .recherche-box button {
-    border: none; background: #1F6FD1; color: #fff; border-radius: 10px;
+    border: none; background: #C2570A; color: #fff; border-radius: 10px;
     width: 38px; font-size: 15px; cursor: pointer; box-shadow: 0 1px 5px rgba(0,0,0,.25);
   }
-  .recherche-box button:hover { background: #1758A8; }
+  .recherche-box button:hover { background: #9E4507; }
   #resRecherche { margin-top: 4px; background: #fff; border-radius: 10px;
     box-shadow: 0 2px 8px rgba(0,0,0,.3); overflow: hidden; display: none; }
   #resRecherche .res { padding: 8px 10px; font-size: 12px; cursor: pointer;
@@ -586,8 +586,8 @@ function afficher(liste) {
     const cat = catInfo(c.categorie);
     const emoji = cat.emoji;
 
-    const couleurStatut = { en_attente: '#E39B2D', valide: '#0E7C5A',
-                            rejete: '#D9534F', importe_osm: '#1d4f91' }[c.statut] || '#E39B2D';
+    const couleurStatut = { en_attente: '#3B7DD8', valide: '#0E7C5A',
+                            rejete: '#D9534F', importe_osm: '#6D4BB8' }[c.statut] || '#3B7DD8';
     let objet;
     if (c.geom_type === 'point') {
       objet = L.marker(pts[0], { icon: L.divIcon({
