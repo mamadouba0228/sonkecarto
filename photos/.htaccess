@@ -1,0 +1,16 @@
+# Dossier des photos envoyées par les contributeurs :
+# seules les images JPEG sont servies, aucun script ne peut s'exécuter ici.
+Options -Indexes -ExecCGI
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+  php_flag engine off
+</IfModule>
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .phar
+RemoveType .php .phtml .php3 .php4 .php5 .php7 .phar
+
+Require all denied
+<FilesMatch "^[0-9a-fA-F-]+\.jpg$">
+  Require all granted
+</FilesMatch>
