@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<!-- © 2026 Guinée Carto — Tous droits réservés -->
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>[DÉMO] Guinée Carto — Contribuez à la carte de la Guinée</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#009460">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="icon" type="image/png" href="icone-192.png">
+<link rel="apple-touch-icon" href="icone-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+  :root {
+    --vert: #009460; --vert-fonce: #00714a; --vert-clair: #e3f5ec; --jaune: #FCD116; --orange: #E8871E;
+    --texte: #1d2823; --bord: #e3e8e5; --fond: #f4f7f5;
+    /* Couleurs de statut des contributions (carte, liste, fiches) */
+    --pin-local: #c0392b;  --st-local: #9b2c2c;   --st-local-bg: #fdeeee;
+    --pin-attente: #E8871E; --st-attente: #94590a; --st-attente-bg: #fff4e2;
+    --pin-valide: #009460; --st-valide: #0a5c40;  --st-valide-bg: #e3f5ec;
+  }
+  body { color: var(--texte); -webkit-font-smoothing: antialiased; }
+
+  /* ---------- Barre d'application ---------- */
+  #appbar {
+    height: 56px; background: linear-gradient(120deg, #00a46b 0%, var(--vert) 45%, var(--vert-fonce) 100%); color: #fff;
+    display: flex; align-items: center; gap: 10px; padding: 0 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25); position: relative; z-index: 1001;
+  }
+  #appbar h1 { font-size: 17px; font-weight: 600; flex: 1; line-height: 1.2; }
+  #appbar .subtitle { font-size: 11px; font-weight: 400; opacity: .85; display: block; }
+  .icon-btn {
+    background: none; border: none; color: #fff; cursor: pointer;
+    font-size: 22px; position: relative; padding: 6px; border-radius: 8px;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,.15); }
+  #btnWhatsapp {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: #25D366; text-decoration: none; flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,.25);
+  }
+  #badge {
+    position: absolute; top: 0; right: 0; background: var(--jaune); color: #3d2c00;
+    font-size: 11px; font-weight: 700; border-radius: 10px; padding: 1px 6px; display: none;
+  }
+  #etatReseau { font-size: 11px; padding: 3px 10px; border-radius: 10px; background: rgba(255,255,255,.2); }
+
+  /* ---------- Disposition ---------- */
+  #layout { display: flex; height: calc(100% - 56px); }
+  #map { flex: 1; }
+  #map.drawing { cursor: crosshair; }
+
+  /* ---------- Panneau latéral ---------- */
+  #panel { width: 360px; background: var(--fond); border-left: 1px solid var(--bord); display: flex; flex-direction: column; }
+  .pan-tete { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; background: #fff; }
+  .pan-titre { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: var(--texte); }
+  .pan-nb { background: var(--vert-clair); color: var(--vert-fonce); font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 20px; }
+
+  /* Compteurs par statut (cliquables = filtres) */
+  .pan-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 2px 16px 12px; background: #fff; }
+  .stat {
+    border: 1.5px solid transparent; border-radius: 12px; padding: 9px 4px 8px; cursor: pointer;
+    font-family: inherit; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    transition: border-color .15s, box-shadow .15s, transform .15s;
+  }
+  .stat b { font-size: 20px; line-height: 1.1; }
+  .stat span { font-size: 10.5px; font-weight: 600; opacity: .85; white-space: nowrap; }
+  .stat.local   { background: var(--st-local-bg);   color: var(--st-local); }
+  .stat.attente { background: var(--st-attente-bg); color: var(--st-attente); }
+  .stat.valide  { background: var(--st-valide-bg);  color: var(--st-valide); }
+  .stat:hover { transform: translateY(-1px); }
+  .stat.actif { border-color: currentColor; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+
+  .pan-outils { display: flex; gap: 8px; padding: 10px 16px; background: #fff; border-top: 1px solid #f0f3f1; border-bottom: 1px solid var(--bord); }
+  #inpFiltre { flex: 1; min-width: 0; padding: 8px 12px; border: 1.5px solid var(--bord); border-radius: 10px; font-size: 13px; font-family: inherit; background: #f8faf9; }
+  #inpFiltre:focus { outline: none; border-color: var(--vert); background: #fff; }
+  .chip { border: 1.5px solid var(--bord); background: #fff; color: #445; border-radius: 20px; padding: 0 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; font-family: inherit; }
+  .chip:hover { border-color: var(--vert); }
+  .chip.actif { background: var(--vert); border-color: var(--vert); color: #fff; }
+
+  /* Cartes de contribution */
+  #liste { flex: 1; overflow-y: auto; padding: 10px 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .item {
+    position: relative; flex-shrink: 0; background: #fff; border-radius: 12px; padding: 11px 12px 11px 15px;
+    display: flex; gap: 11px; align-items: flex-start; cursor: pointer; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(16,40,30,.06), 0 0 0 1px rgba(16,40,30,.05);
+    transition: transform .12s, box-shadow .12s;
+  }
+  .item::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c-st); }
+  .item.st-local   { --c-st: var(--pin-local); }
+  .item.st-attente { --c-st: var(--pin-attente); }
+  .item.st-valide  { --c-st: var(--pin-valide); }
+  .item:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(16,40,30,.12), 0 0 0 1px rgba(16,40,30,.06); }
+  .item-ico { flex: 0 0 40px; height: 40px; border-radius: 11px; background: #f1f5f3; display: flex; align-items: center; justify-content: center; font-size: 21px; }
+  .item-corps { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .item-titre { font-size: 14px; font-weight: 650; color: var(--texte); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-type { font-size: 11.5px; color: #5d6b64; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-meta { font-size: 11px; color: #8a958f; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-meta .sep { margin: 0 5px; opacity: .6; }
+  .item-droite { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; flex-shrink: 0; }
+  .statut, .pastille {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700;
+    padding: 3px 9px; border-radius: 20px; white-space: nowrap;
+  }
+  .statut::before, .pastille::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .statut.local,   .pastille.st-local      { background: var(--st-local-bg);   color: var(--st-local); }
+  .statut.attente, .pastille.st-en_attente { background: var(--st-attente-bg); color: var(--st-attente); }
+  .statut.valide,  .pastille.st-valide,
+  .pastille.st-importe_osm                 { background: var(--st-valide-bg);  color: var(--st-valide); }
+  .item-actions { display: flex; gap: 4px; }
+  .item-btn { border: none; background: #eef2ef; border-radius: 8px; width: 30px; height: 28px; cursor: pointer; font-size: 12px; }
+  .item-btn:hover { background: #dfe8e2; }
+  .item-btn.suppr { background: #fcebeb; }
+  .item-btn.suppr:hover { background: #f5d4d4; }
+  #vide { margin: auto 0; padding: 30px 18px; color: #7d8a83; font-size: 13px; text-align: center; line-height: 1.6; }
+  #vide b:first-of-type { display: block; color: var(--texte); font-size: 14px; margin-bottom: 4px; }
+  #vide .vide-ico { font-size: 40px; margin-bottom: 8px; }
+  #panel footer { padding: 11px; border-top: 1px solid var(--bord); background: #fff; text-align: center; }
+  .lien-stats { color: var(--vert); font-weight: 700; font-size: 12.5px; text-decoration: none; }
+  .lien-stats:hover { text-decoration: underline; }
+
+  /* ---------- Marqueurs des lieux contribués ---------- */
+  .pin-wrap { background: none; border: none; }
+  .pin {
+    width: 36px; height: 36px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+    background: #fff; border: 3px solid var(--c-pin, var(--pin-attente));
+    box-shadow: 0 2px 6px rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center;
+    transition: transform .15s;
+  }
+  .pin span { transform: rotate(45deg); font-size: 18px; line-height: 1; }
+  .pin-local { --c-pin: var(--pin-local); }
+  .pin-en_attente { --c-pin: var(--pin-attente); }
+  .pin-valide, .pin-importe_osm { --c-pin: var(--pin-valide); }
+  .leaflet-marker-icon:hover .pin { transform: rotate(-45deg) scale(1.12); }
+
+  /* ---------- Fiche (popup) d'une contribution ---------- */
+  .pp-popup .leaflet-popup-content-wrapper { padding: 0; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 28px rgba(0,0,0,.22); }
+  .pp-popup .leaflet-popup-content { margin: 0; font-family: inherit; font-size: 13px; line-height: 1.4; }
+  .pp-popup .leaflet-popup-tip { box-shadow: none; }
+  .pp-popup a.leaflet-popup-close-button {
+    top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 50%; z-index: 1;
+    background: rgba(255,255,255,.92); color: #444; font: 18px/25px system-ui, sans-serif; text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,.2);
+  }
+  .pp-photo { display: block; width: 100%; height: 150px; object-fit: cover; background: #e9eeeb; }
+  .pp-corps { padding: 13px 14px 14px; }
+  .pp-tete { display: flex; gap: 10px; align-items: center; padding-right: 26px; }
+  .pp.avec-photo .pp-tete { padding-right: 0; }
+  .pp-ico { flex: 0 0 42px; height: 42px; border-radius: 12px; background: #f1f5f3; display: flex; align-items: center; justify-content: center; font-size: 23px; }
+  .pp-titre { font-size: 15px; font-weight: 700; color: var(--texte); line-height: 1.25; }
+  .pp-type { font-size: 12px; color: #6b7872; margin-top: 1px; }
+  .pp .pastille { margin-top: 10px; }
+  .pp-note {
+    margin-top: 10px; padding: 8px 10px; background: #f7f9f8; border-left: 3px solid var(--vert);
+    border-radius: 0 8px 8px 0; font-size: 12.5px; color: #3b4641; font-style: italic;
+  }
+  .pp-infos { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eef1ef; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: #3b4641; }
+  .pp-ligne { display: flex; gap: 8px; }
+  .pp-ligne > span:first-child { width: 18px; text-align: center; flex-shrink: 0; }
+  .pp .btn-commentaires {
+    margin-top: 12px; width: 100%; border: none; background: var(--vert-clair); color: var(--vert-fonce);
+    border-radius: 10px; padding: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .pp .btn-commentaires:hover { background: #cdeedd; }
+
+  /* ---------- Boutons flottants ---------- */
+  #fabs { position: absolute; right: 16px; bottom: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+  .fab {
+    display: flex; align-items: center; gap: 8px; border: none; cursor: pointer;
+    background: var(--vert); color: #fff; font-size: 14px; font-weight: 600;
+    padding: 12px 18px; border-radius: 28px; box-shadow: 0 4px 14px rgba(0,60,38,.35);
+    font-family: inherit; transition: background .15s, transform .15s;
+  }
+  .fab:hover { background: var(--vert-fonce); transform: translateY(-1px); }
+  @media (min-width: 701px) { #fabs { right: 376px; } } /* à gauche du panneau Contributions */
+  .fab.mini { padding: 10px 12px; background: #fff; color: #333; font-size: 18px; }
+  .fab.mini:hover { background: #f0f0f0; }
+
+  /* ---------- Barre de dessin ---------- */
+  #drawbar {
+    position: absolute; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 1000;
+    background: #fff; border-radius: 14px; box-shadow: 0 3px 12px rgba(0,0,0,.3);
+    display: none; align-items: center; gap: 6px; padding: 8px 10px;
+  }
+  #drawbar button { border: none; background: #f1f1f1; border-radius: 8px; width: 40px; height: 40px; font-size: 18px; cursor: pointer; }
+  #drawbar button:hover { background: #e4e4e4; }
+  #drawbar #valider { width: auto; padding: 0 18px; background: var(--vert); color: #fff; font-size: 14px; font-weight: 600; }
+  #compteur { font-size: 13px; color: #666; min-width: 40px; text-align: center; }
+
+
+  #btnWhatsapp:hover { background: #1EB456; }
+  @media (max-width: 700px) {
+    #btnWhatsapp { padding: 10px 13px; font-size: 12px; bottom: 14px; left: 10px; }
+  }
+
+  #hint {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    background: rgba(20,20,20,.85); color: #fff; font-size: 13px;
+    padding: 8px 16px; border-radius: 10px; display: none; max-width: 90%;
+  }
+
+  /* ---------- Formulaire ---------- */
+  #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 2000; display: none; align-items: center; justify-content: center; padding: 16px; }
+  #form { background: #fff; border-radius: 16px; width: 400px; max-width: 100%; max-height: 92vh; overflow-y: auto; padding: 20px; }
+  #form h2 { font-size: 17px; margin-bottom: 14px; }
+  #form .label { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+  #inpRechercheType { width: 100%; padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 10px; font-size: 14px; margin-bottom: 8px; }
+  #inpRechercheType:focus { outline: none; border-color: var(--vert); }
+  #listeTypes { max-height: 250px; overflow-y: auto; border: 1.5px solid #eee; border-radius: 12px; }
+  .type-groupe { position: sticky; top: 0; background: #f2f6f3; font-size: 12px; font-weight: 700; color: #445; padding: 9px 12px; cursor: pointer; user-select: none; border-bottom: 1px solid #e8ece9; }
+  .type-groupe:hover { background: #e9f1ec; }
+  .type-groupe .chevron { display: inline-block; width: 14px; color: #888; }
+  .type-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 14px; cursor: pointer; border-bottom: 1px solid #f5f5f5; }
+  .type-item:hover { background: #f6fbf8; }
+  .type-item.sel { background: #e1f5ee; font-weight: 600; }
+  .type-item .type-emoji { font-size: 20px; width: 26px; text-align: center; }
+  .type-vide { padding: 18px 12px; color: #999; font-size: 13px; text-align: center; }
+  #form input[type=text] { width: 100%; padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 10px; font-size: 14px; }
+  #form select { width: 100%; padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 10px; font-size: 14px; background: #fff; margin-bottom: 8px; }
+  #form select:focus { outline: none; border-color: var(--vert); }
+  #form input[type=text]:focus { outline: none; border-color: var(--vert); }
+  #form .actions { display: flex; gap: 10px; margin-top: 18px; }
+  .btn { border: none; border-radius: 10px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; }
+  .btn.primaire { background: var(--vert); color: #fff; }
+  .btn.primaire:hover { background: var(--vert-fonce); }
+  .btn.secondaire { background: #eef2ef; color: #333; }
+  #form .mention { font-size: 11px; color: #999; text-align: center; margin-top: 12px; line-height: 1.5; }
+
+  /* ---------- Compte contributeur ---------- */
+  #overlayCompte { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 2500;
+    display: none; align-items: center; justify-content: center; padding: 16px; }
+  #formCompte { background: #fff; border-radius: 16px; width: 380px; max-width: 100%;
+    max-height: 92vh; overflow-y: auto; padding: 20px; }
+  #formCompte h2 { font-size: 17px; margin-bottom: 4px; }
+  #formCompte .sous-titre { font-size: 12px; color: #888; margin-bottom: 14px; line-height: 1.5; }
+  #formCompte .label { font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
+  #formCompte input { width: 100%; padding: 11px 12px; border: 1.5px solid #ddd;
+    border-radius: 10px; font-size: 15px; }
+  #formCompte input:focus { outline: none; border-color: var(--vert); }
+  #formCompte .mention { font-size: 11px; color: #999; text-align: center; margin-top: 12px; line-height: 1.5; }
+  #ligneCompte { display: flex; align-items: center; gap: 8px; background: #f2f6f3;
+    border-radius: 10px; padding: 9px 12px; font-size: 13px; margin-top: 12px; }
+  #ligneCompte .qui { flex: 1; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #ligneCompte button { border: none; background: none; color: var(--vert); font-size: 12px;
+    font-weight: 600; cursor: pointer; }
+
+  #toast {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 90px; z-index: 3000;
+    background: rgba(20,20,20,.9); color: #fff; font-size: 13px;
+    padding: 10px 18px; border-radius: 10px; display: none; max-width: 90%; text-align: center;
+  }
+
+
+  /* ---------- Panneau Commentaires ---------- */
+  #panneauCommentaires {
+    display: none; position: fixed; inset: 0; z-index: 2200;
+    background: rgba(0,0,0,.45); align-items: flex-end;
+  }
+  #panneauCommentaires.ouvert { display: flex; }
+  #commBox {
+    background: #fff; border-radius: 18px 18px 0 0; width: 100%;
+    max-height: 80vh; display: flex; flex-direction: column;
+    box-shadow: 0 -4px 24px rgba(0,0,0,.18);
+  }
+  #commEntete {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px 10px; border-bottom: 1px solid #eee;
+  }
+  #commEntete h3 { font-size: 15px; margin: 0; }
+  #commListe { flex: 1; overflow-y: auto; padding: 10px 14px; }
+  #commBox { max-width: 560px; margin: 0 auto; }
+  .comm-item { background: #f4f7f5; border-radius: 4px 14px 14px 14px; padding: 9px 12px; margin: 6px 0 10px; }
+  .comm-auteur { font-weight: 700; font-size: 13px; color: #009460; }
+  .comm-date   { font-size: 11px; color: #aaa; margin-left: 8px; }
+  .comm-texte  { font-size: 13px; color: #333; margin-top: 4px; line-height: 1.5; }
+  #commVide    { color: #aaa; font-size: 13px; text-align: center; padding: 20px 0; }
+  #commForm    { padding: 10px 14px 16px; border-top: 1px solid #eee; }
+  #commTextarea {
+    width: 100%; border: 1px solid #ddd; border-radius: 10px; padding: 10px;
+    font-size: 14px; resize: none; height: 72px; font-family: inherit;
+    font-size: 16px; /* anti-zoom iOS */
+  }
+  #commTextarea:focus { outline: none; border-color: #009460; }
+  #commBtns { display: flex; gap: 8px; margin-top: 8px; }
+  #btnCommEnvoyer { flex: 1; background: #009460; color: #fff; border: none;
+    border-radius: 20px; padding: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  #btnCommFermer2 { background: #f0f0f0; color: #555; border: none;
+    border-radius: 20px; padding: 10px 16px; font-size: 13px; cursor: pointer; }
+
+  /* ---------- Bannière d'installation PWA ---------- */
+  #banniereInstall {
+    display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 3000;
+    background: #fff; border-top: 3px solid #25D366;
+    box-shadow: 0 -2px 16px rgba(0,0,0,.18);
+    padding: 14px 16px 18px; animation: slideUp .35s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  #banniereInstall .bi-titre {
+    display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; margin-bottom: 6px;
+  }
+  #banniereInstall .bi-titre img { width: 36px; height: 36px; border-radius: 8px; }
+  #banniereInstall .bi-texte { font-size: 13px; color: #444; line-height: 1.5; margin-bottom: 12px; }
+  #banniereInstall .bi-texte b { color: #009460; }
+  #banniereInstall .bi-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+  .bi-btn-ok  { flex: 1; background: #009460; color: #fff; border: none; border-radius: 24px;
+    padding: 11px 16px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; }
+  .bi-btn-non { flex: 0 0 auto; background: #f0f0f0; color: #555; border: none; border-radius: 24px;
+    padding: 11px 14px; font-size: 13px; cursor: pointer; }
+  #instrIos { display:none; }
+
+  /* ---------- Étiquettes des entités sur la carte ---------- */
+  .etiquette-carte {
+    background: transparent; border: none; box-shadow: none; padding: 0;
+    font-weight: 700; font-size: 12px; color: #1a1a1a; white-space: nowrap;
+    text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff, 0 0 5px #fff;
+  }
+  .etiquette-carte::before { display: none; } /* pas de flèche de bulle */
+  .sans-etiquettes .etiquette-carte { display: none; } /* masquées aux petits zooms */
+
+  /* ---------- Recherche Nominatim ---------- */
+  .recherche-box { width: 260px; font-family: inherit; }
+  .recherche-box form { display: flex; gap: 4px; }
+  .recherche-box input {
+    flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 10px;
+    font-size: 13px; background: #fff; box-shadow: 0 1px 5px rgba(0,0,0,.25);
+  }
+  .recherche-box input:focus { outline: none; border-color: #009460; }
+  .recherche-box button {
+    border: none; background: #009460; color: #fff; border-radius: 10px;
+    width: 38px; font-size: 15px; cursor: pointer; box-shadow: 0 1px 5px rgba(0,0,0,.25);
+  }
+  .recherche-box button:hover { background: #00714a; }
+  #resRecherche { margin-top: 4px; background: #fff; border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3); overflow: hidden; display: none; }
+  #resRecherche .res { padding: 8px 10px; font-size: 12px; cursor: pointer;
+    border-bottom: 1px solid #f0f0f0; line-height: 1.4; }
+  #resRecherche .res:hover { background: #f0f8f4; }
+  #resRecherche .credit { padding: 4px 10px; font-size: 10px; color: #aaa; }
+  @media (max-width: 700px) { .recherche-box { width: 200px; } }
+  /* Hauteur d'écran dynamique (barres des navigateurs mobiles) */
+  @supports (height: 100dvh) {
+    #layout { height: calc(100dvh - 56px); }
+  }
+
+  #btnListe { display: none; }
+  #voile { display: none; }
+  #fermerPanel { display: none; background:none; border:none; font-size:18px; cursor:pointer; color:#666; }
+
+  /* ---------- Écrans étroits (téléphones) ---------- */
+  @media (max-width: 700px) {
+    #appbar h1 { font-size: 15px; }
+    #appbar { padding: 0 10px; gap: 6px; }
+    #etatReseau { font-size: 10px; padding: 2px 7px; }
+
+    /* La liste devient un panneau coulissant */
+    #btnListe { display: inline-block; }
+    #panel {
+      position: fixed; top: 56px; right: 0; bottom: 0;
+      width: 88%; max-width: 380px; z-index: 1500;
+      transform: translateX(105%); transition: transform .25s ease;
+      box-shadow: -4px 0 18px rgba(0,0,0,.3); border-left: none;
+    }
+    #panel.ouvert { transform: translateX(0); }
+    #voile.ouvert { display: block; position: fixed; inset: 56px 0 0 0;
+      background: rgba(0,0,0,.35); z-index: 1400; }
+    #fermerPanel { display: inline-block; }
+
+    /* Boutons et outils compacts */
+    .fab { padding: 10px 14px; font-size: 13px; }
+    .fab.mini { padding: 9px 11px; font-size: 16px; }
+    #fabs { right: 10px; bottom: 14px; gap: 8px; }
+    #drawbar { left: 8px; right: 8px; transform: none; bottom: 12px; }
+    #drawbar #valider { padding: 0 12px; font-size: 13px; }
+    .recherche-box { width: min(230px, calc(100vw - 120px)); }
+    .recherche-box input { font-size: 16px; }
+    #form select { font-size: 16px; }
+    #formCompte input { font-size: 16px; }
+    #inpFiltre { font-size: 16px; padding: 7px 10px; }
+
+    /* Formulaire plein confort tactile */
+    #overlay { padding: 8px; align-items: flex-end; }
+    #form { width: 100%; max-height: 88vh; border-radius: 16px 16px 0 0; padding: 16px; }
+    #form input[type=text] { font-size: 16px; padding: 12px; }
+    .cat { padding: 12px 4px; }
+    .btn { padding: 13px; font-size: 14px; }
+  }
+
+  /* Très petits écrans */
+  @media (max-width: 380px) {
+    #appbar .subtitle { display: none; }
+    #cats { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .cat .emoji { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="appbar">
+  <h1>Guinée Carto <span class="subtitle">Contribuez à la carte de la Guinée 🇬🇳</span></h1>
+  <span id="etatReseau">⏳</span>
+  <button class="icon-btn" id="btnClassement" title="Meilleurs contributeurs">🏆</button>
+  <a id="btnWhatsapp"
+     href="https://wa.me/221777778282?text=Bonjour%2C%20je%20vous%20contacte%20depuis%20Guin%C3%A9e%20Carto%20%F0%9F%97%BA%EF%B8%8F"
+     target="_blank" rel="noopener noreferrer"
+     title="Nous contacter sur WhatsApp">
+    <svg viewBox="0 0 32 32" width="20" height="20" fill="#fff" xmlns="http://www.w3.org/2000/svg">
+      <path d="M16 2.9C8.8 2.9 3 8.7 3 15.9c0 2.3.6 4.5 1.8 6.5L3 29l6.8-1.8c1.9 1 4 1.6 6.2 1.6 7.2 0 13-5.8 13-13S23.2 2.9 16 2.9zm6.4 18.3c-.3.8-1.5 1.5-2.1 1.6-.5.1-1.2.1-3.9-1.2-3.3-1.5-5.4-4.9-5.6-5.1-.2-.2-1.5-2-1.5-3.8 0-1.8.9-2.7 1.3-3 .3-.4.7-.5.9-.5.2 0 .5 0 .7.01.2 0 .5-.08.8.6.3.7 1 2.4 1.1 2.6.1.2.1.4 0 .6-.1.2-.2.4-.3.5-.1.2-.3.3-.4.5-.1.2 0 .4.1.6.2.2.7 1.1 1.5 1.8 1 .9 1.9 1.2 2.1 1.3.2.1.4.1.5-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.7-.1.3.1 1.8.9 2.1 1 .3.2.5.3.6.4.1.3.1 1.1-.2 1.9z"/>
+    </svg>
+  </a>
+  <button class="icon-btn" id="btnCompte" title="Mon compte contributeur">👤</button>
+  <button class="icon-btn" id="btnListe" title="Voir mes contributions">📋</button>
+  <button class="icon-btn" id="btnSync" title="Envoyer mes contributions">☁️<span id="badge">0</span></button>
+</div>
+
+<div id="layout">
+  <div id="map"></div>
+  <aside id="panel">
+    <header class="pan-tete">
+      <div class="pan-titre">Contributions <span class="pan-nb" id="nbTotal">0</span></div>
+      <button id="fermerPanel" title="Fermer">✕</button>
+    </header>
+    <div class="pan-stats">
+      <button type="button" class="stat local" data-f="local" title="Enregistrées sur le téléphone, pas encore envoyées"><b id="nbLocal">0</b><span>À envoyer</span></button>
+      <button type="button" class="stat attente" data-f="attente" title="Envoyées, en cours de vérification"><b id="nbAttente">0</b><span>En modération</span></button>
+      <button type="button" class="stat valide" data-f="valide" title="Vérifiées et publiées"><b id="nbValide">0</b><span>Validées</span></button>
+    </div>
+    <div class="pan-outils">
+      <input type="search" id="inpFiltre" placeholder="🔍 Nom, type, auteur…" autocomplete="off">
+      <button type="button" class="chip" id="chipMiennes">👤 Les miennes</button>
+    </div>
+    <div id="liste"><div id="vide">Chargement…</div></div>
+    <footer><a href="stats.html" class="lien-stats">📊 Voir l'avancement de la cartographie →</a></footer>
+  </aside>
+</div>
+<div id="voile"></div>
+
+<div id="hint"></div>
+<div id="avertServeur" style="display:none;position:absolute;top:60px;left:50%;transform:translateX(-50%);z-index:1200;background:#8a1f1f;color:#fff;font-size:12px;padding:8px 16px;border-radius:10px;max-width:92%;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.3)"></div>
+
+
+<div id="fabs">
+  <button class="fab mini" id="btnGps" title="Ma position">📍</button>
+  <button class="fab" data-mode="point">📌 Ajouter un lieu</button>
+  <button class="fab" data-mode="ligne">〰️ Ajouter un linéaire</button>
+  <button class="fab" data-mode="polygone">⬠ Ajouter une surface</button>
+</div>
+
+<div id="drawbar">
+  <button id="btnAnnuler" title="Annuler">✕</button>
+  <button id="btnUndo" title="Retirer le dernier point">↩</button>
+  <span id="compteur">0 pt</span>
+  <button id="valider">✓ Valider</button>
+</div>
+
+<div id="overlay">
+  <div id="form">
+    <h2 id="formTitre">Nouveau lieu</h2>
+    <div class="label">C'est quoi ?</div>
+    <input type="text" id="inpRechercheType" placeholder="🔍 Rechercher un type (école, pompe, café…)" autocomplete="off">
+    <div id="listeTypes"></div>
+    <div id="blocResidentiel" style="display:none">
+      <div class="label">Sous-préfecture / commune de rattachement *</div>
+      <select id="selPrefecture"><option value="">— Préfecture —</option></select>
+      <select id="selSousPref" disabled><option value="">— Sous-préfecture / Commune —</option></select>
+      <div class="label">Nom du quartier ou district (facultatif)</div>
+      <input type="text" id="inpQuartier" placeholder="Ex. : Quartier Madina, District de Sansanko…">
+    </div>
+    <div id="blocEtat" style="display:none">
+      <div class="label">État de l'élément</div>
+      <select id="selEtat">
+        <option value="">— Non renseigné —</option>
+        <option value="bon">🟢 Bon</option>
+        <option value="menace">🟠 Menacé</option>
+        <option value="degrade">🔴 Dégradé</option>
+      </select>
+    </div>
+    <div id="blocRoute" style="display:none">
+      <div class="label">Praticabilité</div>
+      <select id="selPraticabilite">
+        <option value="">— Non renseignée —</option>
+        <option value="pieds">🚶 Pieds seulement</option>
+        <option value="pieds_moto">🚶🏍️ Pieds et moto</option>
+        <option value="pieds_moto_voiture">🚶🏍️🚗 Pieds, moto et voiture</option>
+        <option value="tous">🚶🏍️🚗🚛 Tous véhicules (camion inclus)</option>
+      </select>
+      <div class="label" style="margin-top:10px">Revêtement</div>
+      <select id="selRevetement">
+        <option value="">— Non renseigné —</option>
+        <option value="bitume">🛣️ Route bitumée (asphalte)</option>
+        <option value="beton">🏗️ Route bétonnée (ciment)</option>
+        <option value="bombee">🪨 Route bombée (cailloux rouges / latérite)</option>
+        <option value="naturel">🌿 Route en état naturel (terre battue)</option>
+      </select>
+    </div>
+    <div class="label" id="labelNom">Nom (facultatif)</div>
+    <input type="text" id="inpNom" placeholder="Ex. : École primaire de Kipé">
+    <div class="label">Remarque (facultatif)</div>
+    <input type="text" id="inpNotes" placeholder="Ex. : Ouvert seulement le matin">
+    <div class="label">Photo (facultatif)</div>
+    <input type="file" id="inpPhoto" accept="image/*" style="display:none">
+    <button type="button" class="btn secondaire" id="btnPhoto">📷 Prendre / choisir une photo</button>
+    <div id="photoApercu" style="display:none;align-items:center;gap:10px;margin-top:8px">
+      <img id="photoImg" alt="Aperçu" style="width:90px;height:68px;object-fit:cover;border-radius:10px;border:1px solid #ddd">
+      <button type="button" class="btn secondaire" id="btnPhotoRetirer" style="flex:0 0 auto">✕ Retirer</button>
+    </div>
+    <div id="ligneCompte">
+      <span>👤</span><span class="qui" id="quiCompte">—</span>
+      <button type="button" id="btnModifCompte">modifier</button>
+    </div>
+    <div class="actions">
+      <button class="btn secondaire" id="btnFormAnnuler">Annuler</button>
+      <button class="btn primaire" id="btnEnregistrer">✓ Enregistrer</button>
+    </div>
+    <div class="mention">Votre contribution sera envoyée dès que vous aurez du réseau, puis vérifiée
+    avant publication. En enregistrant, vous acceptez sa publication sous licence ouverte (ODbL)
+    pour améliorer la carte de la Guinée.</div>
+  </div>
+</div>
+
+<!-- Panneau Commentaires -->
+<div id="panneauCommentaires">
+  <div id="commBox">
+    <div id="commEntete">
+      <h3>💬 Commentaires <span id="commNomEntite" style="color:#009460"></span></h3>
+      <button id="btnCommFermer" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888">✕</button>
+    </div>
+    <div id="commListe"><div id="commVide">Chargement…</div></div>
+    <div id="commForm">
+      <textarea id="commTextarea" placeholder="Signalez une anomalie, remerciez, ou ajoutez une précision… (max 500 caractères)" maxlength="500"></textarea>
+      <div id="commBtns">
+        <button id="btnCommEnvoyer">📤 Envoyer</button>
+        <button id="btnCommFermer2">Fermer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bannière d'installation PWA -->
+<div id="banniereInstall">
+  <div class="bi-titre">
+    <img src="icone-192.png" alt="Guinée Carto">
+    Guinée Carto
+  </div>
+  <div class="bi-texte" id="biTexte">
+    Installez l'application sur votre téléphone pour contribuer à la carte de la Guinée.
+  </div>
+  <!-- Mode Facebook / navigateur intégré -->
+  <div id="instrFacebook" style="display:none;font-size:13px;color:#444;line-height:1.6;margin-bottom:10px">
+    <!-- Android : bouton de redirection automatique vers Chrome -->
+    <div id="instrAndroid" style="display:none">
+      L'application va s'ouvrir dans <b>Chrome</b> pour pouvoir être installée sur votre téléphone.
+      <button class="bi-btn-ok" id="btnOuvrirChrome" style="margin-top:10px;width:100%">
+        🌐 Ouvrir dans Chrome
+      </button>
+    </div>
+    <!-- iOS : un seul tap dans le menu Facebook -->
+    <div id="instrIosFb" style="display:none">
+      Touchez <b>···</b> en bas à droite de l'écran, puis <b>« Ouvrir dans le navigateur »</b>
+      — l'application s'ouvrira dans Safari et vous pourrez l'installer en un tap.
+    </div>
+  </div>
+  <!-- Mode iOS Safari -->
+  <div id="instrIos">
+    Touchez le bouton <b>Partager</b> <span style="font-size:18px">⬆️</span> en bas de Safari,
+    puis <b>« Sur l'écran d'accueil »</b> pour installer l'application.
+  </div>
+  <!-- Chrome Android : fallback si beforeinstallprompt tarde -->
+  <div id="instrChrome" style="display:none;font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">
+    Touchez <b>⋮</b> en haut à droite de Chrome,<br>
+    puis <b>« Installer l'application »</b> ou <b>« Ajouter à l'écran d'accueil »</b>.
+  </div>
+  <div class="bi-btns" id="biBtns">
+    <button class="bi-btn-ok"  id="btnInstaller">📲 Installer l'application</button>
+    <button class="bi-btn-non" id="btnPasMaintenant">Plus tard</button>
+  </div>
+</div>
+
+<div id="overlayClassement" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2500;display:none;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:16px;width:360px;max-width:100%;max-height:85vh;overflow-y:auto;padding:20px">
+    <h2 style="font-size:17px;margin-bottom:4px">🏆 Meilleurs contributeurs</h2>
+    <div style="font-size:12px;color:#888;margin-bottom:12px">Nombre de contributions validées</div>
+    <div id="listeClassement" style="font-size:14px">Chargement…</div>
+    <button type="button" class="btn secondaire" id="btnClassementFermer" style="width:100%;margin-top:14px">Fermer</button>
+  </div>
+</div>
+
+<div id="overlayCompte">
+  <div id="formCompte">
+    <h2>👤 Mon compte contributeur</h2>
+    <div class="sous-titre">Indiquez simplement votre nom et votre prénom
+      pour contribuer à la carte de la Guinée.</div>
+    <div class="label">Nom *</div>
+    <input type="text" id="cNom" placeholder="Ex. : Diallo" autocomplete="family-name">
+    <div class="label">Prénom *</div>
+    <input type="text" id="cPrenom" placeholder="Ex. : Mamadou" autocomplete="given-name">
+
+    <div class="actions" style="display:flex;gap:10px;margin-top:18px">
+      <button class="btn secondaire" id="btnComptePlusTard">Plus tard</button>
+      <button class="btn primaire" id="btnCompteOk" style="flex:1">✓ Enregistrer mon compte</button>
+    </div>
+    <div class="mention">Vos contributions seront signées « Prénom + initiale » sur la carte.</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>/*!
+ * Guinée Carto — Application de cartographie participative de la Guinée
+ * © 2026 — Tous droits réservés. Reproduction interdite sans autorisation.
+ */
+const e="https://lamadgeo.alwaysdata.net/sonkecarto/api.php",t=[{id:"village",label:"Village / Quartier / Secteur",emoji:"🏘️",osm:"place=village",geoms:["point"],groupe:"Zone résidentielle",champsAdmin:!0},{id:"zone_residentielle",label:"Zone résidentielle / Quartier",emoji:"🏘️",osm:"landuse=residential",geoms:["polygone"],groupe:"Zone résidentielle",surf:{couleur:"#9E9E9E",remplissage:"#E0DFDF"},champsAdmin:!0},{id:"ecole",label:"École primaire",emoji:"🏫",osm:"amenity=school",geoms:["point"],groupe:"Éducation"},{id:"college_lycee",label:"Collège / Lycée",emoji:"🎓",osm:"amenity=school",geoms:["point"],groupe:"Éducation"},{id:"universite",label:"Université / Institut",emoji:"🏛️",osm:"amenity=university",geoms:["point"],groupe:"Éducation"},{id:"ecole_coranique",label:"École coranique",emoji:"📖",osm:"amenity=school;religion=muslim",geoms:["point"],groupe:"Éducation"},{id:"hopital",label:"Hôpital",emoji:"🏥",osm:"amenity=hospital",geoms:["point"],groupe:"Santé"},{id:"centre_sante",label:"Centre de santé",emoji:"⚕️",osm:"amenity=clinic",geoms:["point"],groupe:"Santé"},{id:"pharmacie",label:"Pharmacie",emoji:"💊",osm:"amenity=pharmacy",geoms:["point"],groupe:"Santé"},{id:"boulangerie",label:"Boulangerie",emoji:"🥖",osm:"shop=bakery",geoms:["point"],groupe:"Commerce & services"},{id:"boucherie",label:"Boucherie",emoji:"🥩",osm:"shop=butcher",geoms:["point"],groupe:"Commerce & services"},{id:"soudure",label:"Souderie / Atelier de soudure",emoji:"⚙️",osm:"craft=metal_construction",geoms:["point"],groupe:"Commerce & services"},{id:"atelier_mecanique",label:"Atelier mécanique",emoji:"🔧",osm:"shop=car_repair",geoms:["point"],groupe:"Commerce & services"},{id:"maternite",label:"Maternité",emoji:"🤱",osm:"amenity=clinic;healthcare=midwife",geoms:["point"],groupe:"Santé"},{id:"pompe",label:"Pompe / Point d'eau",emoji:"🚰",osm:"amenity=drinking_water",geoms:["point"],groupe:"Eau"},{id:"forage",label:"Forage",emoji:"💧",osm:"man_made=water_well;pump=powered",geoms:["point"],groupe:"Eau"},{id:"puits",label:"Puits",emoji:"⛲",osm:"man_made=water_well",geoms:["point"],groupe:"Eau"},{id:"chateau_eau",label:"Château d'eau",emoji:"🗼",osm:"man_made=water_tower",geoms:["point"],groupe:"Eau"},{id:"source",label:"Source naturelle",emoji:"🌊",osm:"natural=spring",geoms:["point"],groupe:"Eau",champEtat:!0},{id:"source_menacee",label:"Source en voie de tarissement",emoji:"⚠️",osm:"natural=spring;intermittent=yes",geoms:["point"],groupe:"Eau",champsAdmin:!0},{id:"source_tarie",label:"Source tarie / disparue",emoji:"🚱",osm:"",geoms:["point"],groupe:"Eau",champsAdmin:!0},{id:"mosquee",label:"Mosquée",emoji:"🕌",osm:"amenity=place_of_worship;religion=muslim",geoms:["point"],groupe:"Religion"},{id:"eglise",label:"Église",emoji:"⛪",osm:"amenity=place_of_worship;religion=christian",geoms:["point"],groupe:"Religion"},{id:"marche",label:"Marché",emoji:"🛒",osm:"amenity=marketplace",geoms:["point"],groupe:"Commerce & services"},{id:"boutique",label:"Boutique / Kiosque",emoji:"🏪",osm:"shop=convenience",geoms:["point"],groupe:"Commerce & services"},{id:"supermarche",label:"Supermarché",emoji:"🛍️",osm:"shop=supermarket",geoms:["point"],groupe:"Commerce & services"},{id:"restaurant",label:"Restaurant",emoji:"🍽️",osm:"amenity=restaurant",geoms:["point"],groupe:"Commerce & services"},{id:"cafe",label:"Café",emoji:"☕",osm:"amenity=cafe",geoms:["point"],groupe:"Commerce & services"},{id:"resto_rapide",label:"Restauration rapide",emoji:"🍔",osm:"amenity=fast_food",geoms:["point"],groupe:"Commerce & services"},{id:"bar",label:"Bar",emoji:"🍹",osm:"amenity=bar",geoms:["point"],groupe:"Commerce & services"},{id:"banque",label:"Banque",emoji:"🏦",osm:"amenity=bank",geoms:["point"],groupe:"Commerce & services"},{id:"microfinance",label:"Microfinance / Transfert",emoji:"💱",osm:"amenity=money_transfer",geoms:["point"],groupe:"Commerce & services"},{id:"station_service",label:"Station-service",emoji:"⛽",osm:"amenity=fuel",geoms:["point"],groupe:"Commerce & services"},{id:"hotel",label:"Hôtel / Auberge",emoji:"🏨",osm:"tourism=hotel",geoms:["point"],groupe:"Commerce & services"},{id:"salon_coiffure",label:"Salon de coiffure",emoji:"💈",osm:"shop=hairdresser",geoms:["point"],groupe:"Commerce & services"},{id:"atelier_garage",label:"Atelier / Garage",emoji:"🔧",osm:"shop=car_repair",geoms:["point"],groupe:"Commerce & services"},{id:"gare_routiere",label:"Gare routière",emoji:"🚌",osm:"amenity=bus_station",geoms:["point"],groupe:"Transport"},{id:"arret_bus",label:"Arrêt de bus / taxi",emoji:"🚏",osm:"highway=bus_stop",geoms:["point"],groupe:"Transport"},{id:"embarcadere",label:"Port / Embarcadère",emoji:"⚓",osm:"amenity=ferry_terminal",geoms:["point"],groupe:"Transport"},{id:"pont_pt",label:"Pont",emoji:"🌉",osm:"man_made=bridge",geoms:["point"],groupe:"Transport"},{id:"parking",label:"Parking",emoji:"🅿️",osm:"amenity=parking",geoms:["point"],groupe:"Transport"},{id:"mairie",label:"Mairie",emoji:"🏛️",osm:"amenity=townhall",geoms:["point"],groupe:"Administration & sécurité"},{id:"prefecture",label:"Préfecture / Sous-préfecture",emoji:"🏢",osm:"office=government",geoms:["point"],groupe:"Administration & sécurité"},{id:"poste_police",label:"Poste de police",emoji:"👮",osm:"amenity=police",geoms:["point"],groupe:"Administration & sécurité"},{id:"gendarmerie",label:"Gendarmerie",emoji:"🪖",osm:"amenity=police",geoms:["point"],groupe:"Administration & sécurité"},{id:"bureau_poste",label:"Bureau de poste",emoji:"📮",osm:"amenity=post_office",geoms:["point"],groupe:"Administration & sécurité"},{id:"parc",label:"Parc / Espace vert",emoji:"🌳",osm:"leisure=park",geoms:["point"],groupe:"Loisirs & divers"},{id:"terrain_sport",label:"Terrain de sport",emoji:"⚽",osm:"leisure=pitch",geoms:["point"],groupe:"Loisirs & divers"},{id:"stade",label:"Stade",emoji:"🏟️",osm:"leisure=stadium",geoms:["point"],groupe:"Loisirs & divers"},{id:"antenne",label:"Antenne télécom",emoji:"📡",osm:"man_made=mast",geoms:["point"],groupe:"Loisirs & divers"},{id:"cimetiere_pt",label:"Cimetière",emoji:"🪦",osm:"landuse=cemetery",geoms:["point"],groupe:"Loisirs & divers"},{id:"autre_point",label:"Autre lieu",emoji:"📍",osm:"",geoms:["point"],groupe:"Loisirs & divers"},{id:"route_nationale",label:"Route nationale",emoji:"🛣️",osm:"highway=primary",geoms:["ligne"],groupe:"Routes principales",trait:{couleur:"#D6754C",epaisseur:6,casing:!0},champsRoute:!0},{id:"route_regionale",label:"Route régionale",emoji:"🛣️",osm:"highway=secondary",geoms:["ligne"],groupe:"Routes principales",trait:{couleur:"#F4C64E",epaisseur:5,casing:!0},champsRoute:!0},{id:"route_locale",label:"Route locale",emoji:"🚗",osm:"highway=tertiary",geoms:["ligne"],groupe:"Routes secondaires",trait:{couleur:"#FFFFFF",epaisseur:4,casing:!0},champsRoute:!0},{id:"rue_residentielle",label:"Rue de quartier",emoji:"🏘️",osm:"highway=residential",geoms:["ligne"],groupe:"Routes secondaires",trait:{couleur:"#E2E2E2",epaisseur:4,casing:!0},champsRoute:!0},{id:"piste",label:"Piste / Route en terre",emoji:"🛤️",osm:"highway=track",geoms:["ligne"],groupe:"Routes secondaires",trait:{couleur:"#996600",epaisseur:3,tirets:"9 6"},champsRoute:!0},{id:"voie_ferree",label:"Voie ferrée",emoji:"🚂",osm:"railway=rail",geoms:["ligne"],groupe:"Voies ferrées",trait:{couleur:"#444444",epaisseur:4,rail:!0}},{id:"sentier",label:"Sentier / Chemin piéton",emoji:"🥾",osm:"highway=path",geoms:["ligne"],groupe:"Chemins",trait:{couleur:"#FC7F6F",epaisseur:3,tirets:"5 6"},champsRoute:!0},{id:"riviere",label:"Rivière / Fleuve",emoji:"🌊",osm:"waterway=river",geoms:["ligne"],groupe:"Cours d'eau",trait:{couleur:"#3D8FD1",epaisseur:5},champEtat:!0},{id:"ruisseau",label:"Ruisseau / Marigot",emoji:"💧",osm:"waterway=stream",geoms:["ligne"],groupe:"Cours d'eau",trait:{couleur:"#6FB3E0",epaisseur:3},champEtat:!0},{id:"canal",label:"Canal",emoji:"〰️",osm:"waterway=canal",geoms:["ligne"],groupe:"Cours d'eau",trait:{couleur:"#3D8FD1",epaisseur:3,tirets:"12 6"}},{id:"caniveau",label:"Caniveau / Drain",emoji:"🕳️",osm:"waterway=drain",geoms:["ligne"],groupe:"Cours d'eau",trait:{couleur:"#8FC3E8",epaisseur:2,tirets:"4 5"}},{id:"cours_eau_assechement",label:"Cours d'eau qui s'assèche",emoji:"⚠️",osm:"waterway=stream;intermittent=yes",geoms:["ligne"],groupe:"Cours d'eau",trait:{couleur:"#CB8A3E",epaisseur:3,tirets:"10 5"},champsAdmin:!0},{id:"cours_eau_asseche",label:"Cours d'eau asséché (à sec)",emoji:"🏜️",osm:"waterway=stream;intermittent=yes",geoms:["ligne"],groupe:"Cours d'eau",trait:{couleur:"#A9746E",epaisseur:3,tirets:"4 6"},champsAdmin:!0},{id:"mur",label:"Mur",emoji:"🧱",osm:"barrier=wall",geoms:["ligne"],groupe:"Types de barrières",trait:{couleur:"#6E6E6E",epaisseur:3}},{id:"cloture",label:"Clôture",emoji:"🚧",osm:"barrier=fence",geoms:["ligne"],groupe:"Types de barrières",trait:{couleur:"#8A8A8A",epaisseur:2,tirets:"2 6"}},{id:"haie",label:"Haie",emoji:"🌿",osm:"barrier=hedge",geoms:["ligne"],groupe:"Types de barrières",trait:{couleur:"#6FA857",epaisseur:3}},{id:"ligne_electrique",label:"Ligne électrique",emoji:"⚡",osm:"power=line",geoms:["ligne"],groupe:"Réseaux de distribution",trait:{couleur:"#8E5BA6",epaisseur:2,tirets:"12 6"}},{id:"conduite_eau",label:"Conduite d'eau",emoji:"🚿",osm:"man_made=pipeline",geoms:["ligne"],groupe:"Réseaux de distribution",trait:{couleur:"#54788C",epaisseur:3,tirets:"10 4"}},{id:"autre_ligne",label:"Autre élément linéaire",emoji:"📏",osm:"",geoms:["ligne"],groupe:"Autre",trait:{couleur:"#E8871E",epaisseur:4}},{id:"champ",label:"Champ / Zone agricole",emoji:"🌾",osm:"landuse=farmland",geoms:["polygone"],groupe:"Types d'utilisation des sols",surf:{couleur:"#B5B888",remplissage:"#EEF0D5"}},{id:"zone_industrielle",label:"Zone industrielle / Mine",emoji:"🏭",osm:"landuse=industrial",geoms:["polygone"],groupe:"Types d'utilisation des sols",surf:{couleur:"#B592AE",remplissage:"#EBDBE8"}},{id:"zone_marche",label:"Emprise de marché",emoji:"🛒",osm:"amenity=marketplace",geoms:["polygone"],groupe:"Types d'utilisation des sols",surf:{couleur:"#D89578",remplissage:"#FFD6C8"}},{id:"cimetiere_z",label:"Cimetière",emoji:"🪦",osm:"landuse=cemetery",geoms:["polygone"],groupe:"Types d'utilisation des sols",surf:{couleur:"#7FA286",remplissage:"#AACBAF"}},{id:"village_zone",label:"Emprise de village",emoji:"🏡",osm:"place=village",geoms:["polygone"],groupe:"Types d'utilisation des sols",surf:{couleur:"#C8A24B",remplissage:"#F5E9D3",tirets:"8 5"}},{id:"batiment",label:"Bâtiment (général)",emoji:"🏠",osm:"building=yes",geoms:["polygone"],groupe:"Types de bâtiments",surf:{couleur:"#9C8F84",remplissage:"#D9D0C9"}},{id:"maison",label:"Maison d'habitation",emoji:"🏠",osm:"building=house",geoms:["polygone"],groupe:"Types de bâtiments",surf:{couleur:"#B3A597",remplissage:"#E8E0D8"}},{id:"batiment_ecole",label:"Bâtiment d'école",emoji:"🏫",osm:"building=school",geoms:["polygone"],groupe:"Types de bâtiments",surf:{couleur:"#C4A94F",remplissage:"#F2E6C9"}},{id:"batiment_mosquee",label:"Mosquée (bâtiment)",emoji:"🕌",osm:"building=mosque",geoms:["polygone"],groupe:"Types de bâtiments",surf:{couleur:"#7FA070",remplissage:"#D8E5D2"}},{id:"batiment_eglise",label:"Église (bâtiment)",emoji:"⛪",osm:"building=church",geoms:["polygone"],groupe:"Types de bâtiments",surf:{couleur:"#9C82AC",remplissage:"#E3D7E8"}},{id:"hangar",label:"Hangar / Entrepôt",emoji:"🏗️",osm:"building=warehouse",geoms:["polygone"],groupe:"Types de bâtiments",surf:{couleur:"#9A9AAC",remplissage:"#DCDCE3"}},{id:"plan_eau",label:"Lac / Plan d'eau",emoji:"💧",osm:"natural=water",geoms:["polygone"],groupe:"Étendues d'eau",surf:{couleur:"#6FA8BC",remplissage:"#AAD3DF"},champEtat:!0},{id:"mare",label:"Mare / Bassin",emoji:"🐸",osm:"water=pond",geoms:["polygone"],groupe:"Étendues d'eau",surf:{couleur:"#8CBACB",remplissage:"#C4E2EA"},champEtat:!0},{id:"zone_inondable",label:"Marécage / Zone inondable",emoji:"🌧️",osm:"natural=wetland",geoms:["polygone"],groupe:"Étendues d'eau",surf:{couleur:"#7FA8C9",remplissage:"#D6E9DC",tirets:"6 5"},champEtat:!0},{id:"foret",label:"Forêt",emoji:"🌲",osm:"natural=wood",geoms:["polygone"],groupe:"Éléments naturels",surf:{couleur:"#7FA870",remplissage:"#ADD19E"},champEtat:!0},{id:"savane",label:"Savane / Prairie",emoji:"🌿",osm:"natural=grassland",geoms:["polygone"],groupe:"Éléments naturels",surf:{couleur:"#9CBF7E",remplissage:"#CDEBB0"},champEtat:!0},{id:"sable",label:"Sable / Plage",emoji:"🏖️",osm:"natural=sand",geoms:["polygone"],groupe:"Éléments naturels",surf:{couleur:"#D9C173",remplissage:"#FFF1BA"}},{id:"rocher",label:"Rocher / Affleurement",emoji:"🪨",osm:"natural=bare_rock",geoms:["polygone"],groupe:"Éléments naturels",surf:{couleur:"#A5A29C",remplissage:"#D8D6D2"}},{id:"parc_z",label:"Parc / Espace vert",emoji:"🌳",osm:"leisure=park",geoms:["polygone"],groupe:"Équipements & lieux",surf:{couleur:"#8CC793",remplissage:"#C8FACC"}},{id:"terrain_sport_z",label:"Terrain de sport",emoji:"⚽",osm:"leisure=pitch",geoms:["polygone"],groupe:"Équipements & lieux",surf:{couleur:"#6FB398",remplissage:"#AAE0CB"}},{id:"stade_z",label:"Stade",emoji:"🏟️",osm:"leisure=stadium",geoms:["polygone"],groupe:"Équipements & lieux",surf:{couleur:"#84BC8B",remplissage:"#DFFCE2"}},{id:"hopital_z",label:"Centre hospitalier",emoji:"🏥",osm:"amenity=hospital",geoms:["polygone"],groupe:"Équipements & lieux",surf:{couleur:"#D08888",remplissage:"#FFDDDD"}},{id:"lieu_culte_z",label:"Lieu de culte (enceinte)",emoji:"🕌",osm:"amenity=place_of_worship",geoms:["polygone"],groupe:"Équipements & lieux",surf:{couleur:"#A98CC7",remplissage:"#E5DAF0"}},{id:"ecole_enceinte",label:"Enceinte d'école",emoji:"🏫",osm:"amenity=school",geoms:["polygone"],groupe:"Équipements & lieux",surf:{couleur:"#C9C46B",remplissage:"#FFFFE5"}},{id:"zone_brulee",label:"Zone brûlée (feu de brousse)",emoji:"🔥",osm:"",geoms:["polygone"],groupe:"Alertes environnementales",surf:{couleur:"#8E3B2F",remplissage:"#E0A992",tirets:"6 4"},champsAdmin:!0},{id:"defrichement",label:"Défrichement / coupe de forêt",emoji:"🪓",osm:"",geoms:["polygone"],groupe:"Alertes environnementales",surf:{couleur:"#A05A2C",remplissage:"#EBD2B8",tirets:"6 4"},champsAdmin:!0},{id:"autre_zone",label:"Autre zone",emoji:"⬠",osm:"",geoms:["polygone"],groupe:"Autre",surf:{couleur:"#E8871E",remplissage:"#FBE3C8"}}],o={Beyla:["Beyla centre","Moussadou","Boola","Nionsomoridou","Gbackedou","Gbessoba","Koumandou","Diassodou","Fouala","Karala","Sokourala","Diarraguerela","Sinko","Samana","Tiewa","Fonodou"],Boffa:["Boffa centre","Coliah","Doupourou","Koba","Lisso","Mankounta","Tamita","Tougnifily"],"Boké":["Boké centre","Kamsar","Tanene","Sangaredi","Kanfarandé","Bintimodia","Dabiss","Kolaboui","Malapouya","Sansale"],Conakry:["Kaloum","Dixinn","Matam","Ratoma","Matoto"],Coyah:["Coyah centre","Maneah","Wonkifong","Kouriah"],Dabola:["Dabola centre","Bissikirima","Konindou","Banko","M'dema","Kankama","Arfamoussaya","Dogomet","Kindoye"],Dalaba:["Dalaba centre","Kankalabé","Mitty","Ditinn","Bodié","Koba","Mombeya","Kaala","Mafara","Kebaly","Kourou"],Dinguiraye:["Dinguiraye centre","Dialakoro","Lansanaya","Kalinko","Selouma","Banora","Diatifere","Gagnakaly"],"Dubréka":["Dubréka centre","Khorira","Falessade","Tondon","Bady","Ouassou","Tanene"],Faranah:["Faranah centre","Hermakono","Beindou","Sandinia","Tiro","Nialia","Passaya","Kobikoro","Songoyah","Banian","Marela","Tindo","Bantou","Dantilia","Ballaya","Bambaya"],"Forécariah":["Forécariah centre","Allassoyah","Benty","Farmoriah","Kaliah","Sikhourou","Moussayah","Kakossa","Kaback","Maferinyah","Moribayah"],Fria:["Fria centre","Baguinet","Tormelin","Banguigny"],Gaoual:["Gaoual centre","Koumbia","Wendou m'bourou","Touba","Kounsitel","Kakony","Foulamory","Malantan"],"Guéckédou":["Guéckédou centre","Koundou","Bolodou","Kassadou","Fangamadou","Temessadou","Ouende kenema","Guendembou","Nongoa","Tekoulo","Kondembadou","Guelo n'faly"],Kankan:["Kankan centre","Bate nafadji","Karfamoriah","Balandou","Gberedou","Baranama","Tinti oulen","Boula","Sabadou baranama","Missamana","Toukounou","Koumban","Mamouroudou","Moribaya","Djelibakoro","Fodécariah-badimana","Djimbala"],Kindia:["Kindia centre","Madina oula","Sougueta","Linsan","Bangouya","Damakania","Kolentè","Molota","Friguiagbé","Mambia","Samaya"],Kissidougou:["Kissidougou centre","Beindou","Kondiadou","Yende millimou","Firawa","Banama","Bardou","Manfran","Gbangbadou","Fermessadou","Yombiro","Sangardo","Albadariah"],Koubia:["Koubia centre","Pilimini","Matakaou","Missira","Gadha woundou","Fafaya"],Koundara:["Koundara centre","Guingan","Termesse","Sambailo","Saraboido","Kamaby","Youkounkoun"],Kouroussa:["Kouroussa centre","Sanguiana","Balato","Cissela","Douako","Koumana","Doura","Babila","Komolakoura","Baro","Kiniero","Banfele","Fadou-saba","Kouroukoro","Kansereyah"],"Kérouané":["Kérouané centre","Soromaya","Sibiribaro","Banankoro","Damaro","Komodou","Linko","Konsankoro"],"Labé":["Labé centre","Dalein","Dara labe","Diari","Dionfo","Garambé","Hafia","Tarambaly","Kaalan","Kouramangui","Noussy","Popodara","Sannoun","Tountouroun"],Lola:["Lola centre","Gama berema","N'zoo","Tounkarata","Bossou","Lainé","Kokota","Gueasso","Foumbadou"],"Lélouma":["Lelouma centre","Herico","Sagalé","Parawol","Thianguel bory","Manda","Balaya","Laafou","Linsan saran","Diountou","Korbé"],Macenta:["Macenta centre","N'zebela","Wattanga","Bofousou","Kouankan","Oremai","Binikala","Sengbedou","Daro","Seredou","Balizia","Koyamah","Fassankoni","Panziazou","Vasseredou"],Mali:["Mali centre","Madina wora","Fougou","Touba bagadadji","Lébékéré","Yembering","Madina salambandé","Gayah","Balaki","Teliré","Dougountouny","Donghel sigon","Hidayatou","Badougoula"],Mamou:["Mamou centre","Boulliwel","Gongoret","Konkouré","Niagara","Poredaka","Teguereya","Timbo","Tolo","Kegneko","Dounet","Soyah","Sara moussayah","Oure kaba"],Mandiana:["Mandiana centre","Balandougouba","Dialakoro","Faralako","Kantoumanina","Kinieran","Kondianakoro","Koundian","Morodou","Niantanina","Saladou","Sansando","Kodiaran"],"N'Zérékoré":["N'Zérékoré centre","Gouecké","Bounouma","Womey","Samoé","Palé","Koulé","Koropara","Soulouta","Yalenzou","Kobela"],Pita:["Pita centre","Gongorè","Ley-miro","Timbi touni","Timbi madina","Sintaly","Dongol touma","Ninguelandé","Sangareyah","Bantignel","Maci","Brouwal tappe"],Siguiri:["Siguiri centre","Norassoba","Kintinian","Siguirini","Maleah","Niagassola","Kiniebakoura","Banko","Naboun","Niandankoro","Noukounkan","Doko","Franwalia","Didi Kouremale","Tomba-kanssa","Tomboni","Fidako","Diomabana","Mignada","Koumandjambougou"],"Tougué":["Tougué centre","Kansagui","Kouratongo","Koin","Konah","Fello koundou","Fatako","Tangaly","Kollagui","Kollet"],"Télimélé":["Télimélé centre","Sogolon","Sinta","Thiontian","Kollet","Tarihoye","Gougoudje","Koba","Missira","Brouwal","Daramagnaki","Santou","Konsotamy","Sarekaly","Kawessi"],Yomou:["Yomou centre","Bowé","Bignamou","Diecké","Bheta","Banié","Pela"]};function n(e){return t.find(t=>t.id===e)||{label:String(e),emoji:"📍"}}function i(e){return String(e??"").replace(/[&<>"']/g,e=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[e]))}let a=[],r=[],s=null,l=[];try{r=JSON.parse(localStorage.getItem("gc_queue")||"[]")}catch(e){}function u(){try{localStorage.setItem("gc_queue",JSON.stringify(r))}catch(e){}}function m(){return crypto.randomUUID?crypto.randomUUID():"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,e=>{const t=16*Math.random()|0;return("x"===e?t:3&t|8).toString(16)})}let c="";try{c=localStorage.getItem("gc_device")||"",c||(c=m(),localStorage.setItem("gc_device",c))}catch(e){c=m()}let d=[];try{d=JSON.parse(localStorage.getItem("gc_mes_ids")||"[]")}catch(e){}function p(e){d.push(e),d.length>500&&(d=d.slice(-500));try{localStorage.setItem("gc_mes_ids",JSON.stringify(d))}catch(e){}}let g=null;const y=L.map("map").setView([11.3182,-12.2833],13),b=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'© contributeurs <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}),h=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,maxNativeZoom:17,attribution:"© Esri — Source : Esri, Maxar, Earthstar Geographics, et la communauté des utilisateurs SIG"}),f=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,maxNativeZoom:17,attribution:"© Esri"}),v=L.layerGroup([h,f]),E=L.tileLayer("https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",{maxZoom:21,attribution:"© Google"});E.addTo(y);const B=L.control.layers({"🛰️ Google Satellite":E,"🛰️ Satellite (Esri)":v,"🗺️ Plan (OSM)":b},null,{position:"topleft",collapsed:window.innerWidth<700}).addTo(y),C="";async function k(e,t){}k(y,B);const _=L.layerGroup().addTo(y);function I(){y.getContainer().classList.toggle("sans-etiquettes",y.getZoom()<14)}y.on("zoomend",I),I();const x=L.layerGroup().addTo(y);let LY={};function urlPhoto(p){return/^(data:|https?:)/.test(p)?p:new URL(p,new URL(e,location.href)).href}const optPopup={className:"pp-popup",maxWidth:280,minWidth:240,autoPanPadding:[20,70]};function dateFr(e){const t=new Date(String(e).replace(" ","T"));return isNaN(t)?"":t.toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"})}function dateRel(e){const t=new Date(String(e).replace(" ","T"));if(isNaN(t))return"";const n=new Date,o=Math.round((new Date(n.getFullYear(),n.getMonth(),n.getDate())-new Date(t.getFullYear(),t.getMonth(),t.getDate()))/864e5);return o<=0?"aujourd’hui":1===o?"hier":o<7?"il y a "+o+" j":dateFr(e)}function j(e,t){return L.divIcon({className:"pin-wrap",html:`<div class="pin pin-${t||"en_attente"}"><span>${e}</span></div>`,iconSize:[36,36],iconAnchor:[18,44],popupAnchor:[0,-40],tooltipAnchor:[0,2]})}function S(e){return"local"===e?"#c0392b":"valide"===e||"importe_osm"===e?"#009460":"#E8871E"}function w(e){return{local:"À envoyer",en_attente:"En modération",valide:"Validé",importe_osm:"Dans OSM"}[e]||e}function T(e){return"Point"===e.type?[[e.coordinates[1],e.coordinates[0]]]:"LineString"===e.type?e.coordinates.map(e=>[e[1],e[0]]):e.coordinates[0].map(e=>[e[1],e[0]])}function M(e,t,o){const n=t.trait||{couleur:"#E8871E",epaisseur:4},i="valide"===o||"importe_osm"===o?1:.65,a=[];return n.casing&&a.push(L.polyline(e,{color:"#5B5B5B",weight:n.epaisseur+3,opacity:i})),a.push(L.polyline(e,{color:n.couleur,weight:n.epaisseur,opacity:i,dashArray:n.tirets||null,lineCap:"round",lineJoin:"round"})),n.rail&&a.push(L.polyline(e,{color:"#FFFFFF",weight:Math.max(n.epaisseur-2,1.5),opacity:i,dashArray:"8 8"})),a}function F(){_.clearLayers(),LY={};const e=[...a.map(e=>({...e,_statut:e.statut})),...r.map(e=>({...e,_statut:"local"}))];for(const t of e){const e=T(t.geom_geojson),o=n(t.categorie),at=t.attributs||{},ligne=(e,t)=>`<div class="pp-ligne"><span>${e}</span><span>${t}</span></div>`,a=at.sous_prefecture?ligne("📍",(at.quartier?i(at.quartier)+" — ":"")+i(at.sous_prefecture)+(at.prefecture?" ("+i(at.prefecture)+")":"")):"";let r=t.signature||"";!r&&"local"===t._statut&&ge&&(r=ge.prenom+(ge.nom?" "+ge.nom.charAt(0)+".":""));const s=r?ligne("👤",`Ajouté par <b>${i(r)}</b>`):"",l=t.created_at?ligne("📅",dateFr(t.created_at)):"",u=at.etat&&pe[at.etat]?ligne("🩺","État : "+pe[at.etat]):"",m=at.praticabilite&&me[at.praticabilite]?ligne("🚦",me[at.praticabilite]):"",c=at.revetement&&ce[at.revetement]?ligne("🛤️",ce[at.revetement]):"",d=t.photo?`<img class="pp-photo" src="${i(urlPhoto(t.photo))}" alt="Photo">`:"",nt=t.notes?`<div class="pp-note">${i(t.notes)}</div>`:"",inf=a+u+m+c+s+l,p=`<div class="pp${d?" avec-photo":""}">${d}<div class="pp-corps"><div class="pp-tete"><span class="pp-ico">${o.emoji}</span><div><div class="pp-titre">${i(t.nom)||i(o.label)}</div><div class="pp-type">${i(o.label)}</div></div></div><span class="pastille st-${i(t._statut)}">${w(t._statut)}</span>${nt}${inf?`<div class="pp-infos">${inf}</div>`:""}<button class="btn-commentaires" data-id="${i(t.id)}" data-type="${i(t.geom_type)}" data-nom="${i(t.nom||o.label)}">💬 Commentaires</button></div></div>`,g=t.nom?i(t.nom):"";if("point"===t.geom_type){const mk=L.marker(e[0],{icon:j(o.emoji,t._statut)}).bindPopup(p,optPopup).addTo(_);LY[t.id]=mk,g&&mk.bindTooltip(g,{permanent:!0,direction:"bottom",offset:[0,4],className:"etiquette-carte"})}else if("ligne"===t.geom_type){const n=M(e,o,t._statut);n.forEach(e=>e.bindPopup(p,optPopup).addTo(_)),LY[t.id]=n[n.length-1],g&&n[n.length-1].bindTooltip(g,{permanent:!0,direction:"center",className:"etiquette-carte"})}else{const n=o.surf||{couleur:"#E8871E",remplissage:"#F5C48A"},i="valide"===t._statut||"importe_osm"===t._statut?1:.6,a=L.polygon(e,{color:n.couleur,weight:3.5,opacity:i,dashArray:n.tirets||null,fill:!1}).bindPopup(p,optPopup).addTo(_);LY[t.id]=a,g&&a.bindTooltip(g,{permanent:!0,direction:"center",className:"etiquette-carte"})}}}let FL="tous",FQ="",FM=!1;function A(){const e=document.getElementById("liste"),srv=a.slice().sort((x,z)=>String(z.created_at||"").localeCompare(String(x.created_at||""))),t=[...r.map(e=>({...e,_statut:"local"})),...srv.map(e=>({...e,_statut:e.statut}))],cl=o=>"local"===o._statut?"local":"en_attente"===o._statut?"attente":"valide",mien=o=>"local"===o._statut||d.includes(o.id),cpt={local:0,attente:0,valide:0};for(const o of t)cpt[cl(o)]++;document.getElementById("nbTotal").textContent=t.length,document.getElementById("nbLocal").textContent=cpt.local,document.getElementById("nbAttente").textContent=cpt.attente,document.getElementById("nbValide").textContent=cpt.valide,document.querySelectorAll(".pan-stats .stat").forEach(b=>b.classList.toggle("actif",b.dataset.f===FL)),document.getElementById("chipMiennes").classList.toggle("actif",FM);if(!t.length)return void(e.innerHTML='<div id="vide"><div class="vide-ico">🗺️</div><b>Aucune contribution pour l’instant</b>Utilisez <b>Ajouter un lieu</b>, <b>un linéaire</b> ou <b>une surface</b> pour enrichir la carte.</div>');const q=oe(FQ.trim()),f=t.filter(o=>{if("tous"!==FL&&cl(o)!==FL)return!1;if(FM&&!mien(o))return!1;if(!q)return!0;const k=n(o.categorie);return oe([o.nom,k.label,o.signature,o.notes].filter(Boolean).join(" ")).includes(q)});if(!f.length)return void(e.innerHTML='<div id="vide"><div class="vide-ico">🔍</div><b>Aucun résultat</b>Aucune contribution ne correspond à ce filtre.</div>');e.innerHTML="";const fr=document.createDocumentFragment();for(const o of f){const t=n(o.categorie),a=cl(o),r="local"===o._statut?"local":"serveur",s="local"===o._statut||"en_attente"===o._statut&&d.includes(o.id);let au=o.signature||"";!au&&"local"===o._statut&&ge&&(au=ge.prenom+(ge.nom?" "+ge.nom.charAt(0)+".":""));const dt=o.created_at?dateRel(o.created_at):"local"===o._statut?"pas encore envoyée":"",meta=[au?"👤 "+i(au):"",dt?"🕒 "+i(dt):"",o.photo?"📷 photo":""].filter(Boolean).join('<span class="sep">·</span>'),l=document.createElement("div");l.className="item st-"+a,l.innerHTML=`<span class="item-ico">${t.emoji}</span><span class="item-corps"><span class="item-titre">${i(o.nom)||i(t.label)}</span><span class="item-type">${{point:"Lieu",ligne:"Linéaire",polygone:"Surface"}[o.geom_type]||""} · ${i(t.label)}</span>${meta?`<span class="item-meta">${meta}</span>`:""}</span><span class="item-droite"><span class="statut ${a}">${w(o._statut)}</span>${s?'<span class="item-actions"><button class="item-btn btn-modif" title="Modifier">✏️</button><button class="item-btn suppr btn-suppr" title="Supprimer">🗑</button></span>':""}</span>`,l.onclick=()=>{const ly=LY[o.id];if(window.innerWidth<=700&&Ke(!1),ly){ly.getBounds?y.fitBounds(ly.getBounds(),{maxZoom:18,padding:[50,50]}):y.setView(ly.getLatLng(),Math.max(y.getZoom(),17)),setTimeout(()=>ly.openPopup(),350);return}const e=T(o.geom_geojson);y.setView(e[Math.floor(e.length/2)],Math.max(y.getZoom(),16))},s&&(l.querySelector(".btn-modif").onclick=e=>{e.stopPropagation(),K(o,r)},l.querySelector(".btn-suppr").onclick=e=>{e.stopPropagation(),D(o,r)}),fr.appendChild(l)}e.appendChild(fr)}async function D(t,o){const i=t.nom||n(t.categorie).label;if(confirm("Supprimer « "+i+" » ?")){if("local"===o)return r=r.filter(e=>e.id!==t.id),u(),F(),A(),P(),void Re("Contribution supprimée.");try{const o=await fetch(e+"?action=delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:t.id,geom_type:t.geom_type,device_id:c})}),n=await o.json();if(n.ok){d=d.filter(e=>e!==t.id);try{localStorage.setItem("gc_mes_ids",JSON.stringify(d));const e=JSON.parse(localStorage.getItem("gc_statuts")||"{}");delete e[t.id],localStorage.setItem("gc_statuts",JSON.stringify(e))}catch(e){}Re("Contribution supprimée."),O()}else Re(n.erreur||"Suppression impossible.")}catch(e){Re("Pas de réseau — réessayez plus tard.")}}}function K(e,t){if(!ge)return he(),void Re("Créez d’abord votre compte contributeur.");g={id:e.id,source:t,geom_type:e.geom_type},Ke(!1),document.getElementById("formTitre").textContent="Modifier la contribution",ee=e.geom_type,X=e.categorie,te=new Set,document.getElementById("inpRechercheType").value="",ie(e.geom_type),se(),document.getElementById("labelNom").textContent="polygone"===e.geom_type?"Nom (facultatif)":"Nom de l’entité *",document.getElementById("inpNom").value=e.nom||"",document.getElementById("inpNotes").value=e.notes||"",Se();const o=e.attributs||{};o.prefecture?(ae.value=o.prefecture,ae.dispatchEvent(new Event("change")),o.sous_prefecture&&(re.value=o.sous_prefecture)):(ae.value="",re.innerHTML='<option value="">— Sous-préfecture / Commune —</option>',re.disabled=!0),document.getElementById("inpQuartier").value=o.quartier||"",de.value=o.etat||"",le.value=o.praticabilite||"",ue.value=o.revetement||"",Q.style.display="flex"}function P(){const e=document.getElementById("badge");e.textContent=r.length,e.style.display=r.length>0?"inline-block":"none"}function R(){document.getElementById("etatReseau").textContent=navigator.onLine?"🟢 En ligne":"🔴 Hors ligne"}function N(e){const t=document.getElementById("avertServeur");e?(t.textContent=e,t.style.display="block"):t.style.display="none"}async function z(){if(!d.length||!navigator.onLine)return;const t="gc_notif_comms_ts",o=parseInt(localStorage.getItem(t)||"0"),n=Date.now();try{const a=await fetch(e+"?action=mes_notifications&ids="+encodeURIComponent(d.join(","))+"&depuis="+o+"&dev="+encodeURIComponent(c)),r=await a.json();if(!r.ok||!r.commentaires.length)return;const s={};for(const e of r.commentaires)s[e.contribution_id]||(s[e.contribution_id]=[]),s[e.contribution_id].push(e);const l=Object.values(s);if(1===l.length){const e=l[0],t=e[0].nom_contrib?" « "+e[0].nom_contrib+" »":"";1===e.length?Re("💬 "+i(e[0].auteur)+" a commenté votre contribution"+t+" !"):Re("💬 "+e.length+" nouveaux commentaires sur votre contribution"+t+" !")}else Re("💬 "+l.length+" de vos contributions ont reçu de nouveaux commentaires !");localStorage.setItem(t,n.toString())}catch(e){}}let $=0,q=!1;async function O(){if(!q){q=!0;try{const t=await fetch(e+"?action=list");let o=null;try{o=await t.json()}catch(e){o=null}o&&o.ok?($=0,N(""),G(o.contributions),a=o.contributions,F(),A(),z()):navigator.onLine&&($++,$>=3&&N("⚠️ Impossible de charger les contributions du serveur. Vos saisies restent possibles et seront conservées."))}catch(e){navigator.onLine&&($++,$>=3&&N("⚠️ Le serveur ne répond pas — les contributions déjà enregistrées ne peuvent pas s’afficher pour le moment."))}finally{q=!1}}}function G(e){let t={};try{t=JSON.parse(localStorage.getItem("gc_statuts")||"{}")}catch(e){}const o={};for(const t of e)d.includes(t.id)&&(o[t.id]=t.statut);let n=0,i=0;for(const e of Object.keys(t)){if("en_attente"!==t[e])continue;const a=o[e];"valide"===a||"importe_osm"===a?n++:a||i++}try{localStorage.setItem("gc_statuts",JSON.stringify(o))}catch(e){}n>0?Re(1===n?"🎉 Votre contribution a été validée ! Merci.":"🎉 "+n+" de vos contributions ont été validées ! Merci."):i>0&&Re(1===i?"ℹ️ Une de vos contributions n’a pas été retenue après vérification.":"ℹ️ "+i+" de vos contributions n’ont pas été retenues.")}let H=!1;async function U(){if(H||0===r.length||!navigator.onLine)return;H=!0;let t=0;for(const o of[...r])try{const n=await fetch(e+"?action=add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(o)});(await n.json()).ok&&(r=r.filter(e=>e.id!==o.id),t++)}catch(e){break}u(),P(),H=!1,t>0&&(Re(t+" contribution(s) envoyée(s). Merci !"),O())}setInterval(()=>{navigator.onLine&&O()},12e4),document.addEventListener("visibilitychange",()=>{"visible"===document.visibilityState&&navigator.onLine&&O()}),window.addEventListener("online",()=>{R(),U(),O()}),window.addEventListener("offline",R),document.getElementById("btnSync").onclick=()=>0===r.length?Re("Rien à envoyer."):navigator.onLine?void U():Re("Pas de réseau — vos contributions seront envoyées plus tard.");const V=document.getElementById("hint"),Z=document.getElementById("drawbar"),J=document.getElementById("fabs");function W(){x.clearLayers(),l.length>1&&("polygone"===s&&l.length>2?L.polygon(l,{color:"#E8871E",weight:3,dashArray:"6 4",fillOpacity:.2}).addTo(x):L.polyline(l,{color:"#E8871E",weight:3,dashArray:"6 4"}).addTo(x));for(const e of l)L.circleMarker(e,{radius:6,color:"#fff",weight:2,fillColor:"#E8871E",fillOpacity:1}).addTo(x);document.getElementById("compteur").textContent=l.length+" pt"}function Y(e){s=e,l=[],W(),document.getElementById("map").classList.toggle("drawing",!!e),J.style.display=e?"none":"flex",document.getElementById("btnWhatsapp").style.display=e?"none":"flex",Z.style.display=e?"flex":"none",V.textContent=e?{point:"Touchez la carte pour placer le lieu.",ligne:"Touchez la carte pour tracer la ligne, puis Valider.",polygone:"Touchez la carte pour dessiner le contour, puis Valider."}[e]:"",V.style.display=e?"block":"none"}document.querySelectorAll(".fab[data-mode]").forEach(e=>e.addEventListener("click",()=>Y(e.dataset.mode))),y.on("click",e=>{s&&(l.push([e.latlng.lat,e.latlng.lng]),W(),"point"===s&&Ce())}),document.getElementById("btnAnnuler").onclick=()=>Y(null),document.getElementById("btnUndo").onclick=()=>{l.pop(),W()},document.getElementById("valider").onclick=()=>"ligne"===s&&l.length<2?Re("Une ligne a besoin d’au moins 2 points."):"polygone"===s&&l.length<3?Re("Une zone a besoin d’au moins 3 points."):0===l.length?Re("Touchez d’abord la carte."):void Ce(),document.getElementById("btnGps").onclick=()=>{if(!navigator.geolocation)return Re("Géolocalisation indisponible.");navigator.geolocation.getCurrentPosition(e=>y.setView([e.coords.latitude,e.coords.longitude],16),()=>Re("Position refusée ou indisponible."))};const Q=document.getElementById("overlay");let X=null,ee="point",te=new Set;function oe(e){return String(e).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()}function ne(e){if(e.surf){const t=e.surf,o=t.tirets?` stroke-dasharray="${t.tirets}"`:"";return`<svg class="type-emoji" width="32" height="18" viewBox="0 0 32 18"><rect x="3" y="3" width="26" height="12" rx="2" fill="${t.remplissage}" fill-opacity="0.8" stroke="${t.couleur}" stroke-width="2"${o}/></svg>`}if(e.trait){const t=e.trait,o=t.casing?`<line x1="2" y1="8" x2="30" y2="8" stroke="#5B5B5B" stroke-width="${Math.min(t.epaisseur+3,9)}" stroke-linecap="round"/>`:"",n=t.rail?'<line x1="2" y1="8" x2="30" y2="8" stroke="#FFFFFF" stroke-width="2" stroke-dasharray="5 5"/>':"",i=t.tirets?` stroke-dasharray="${t.tirets}"`:"";return`<svg class="type-emoji" width="32" height="16" viewBox="0 0 32 16">${o}<line x1="2" y1="8" x2="30" y2="8" stroke="${t.couleur}" stroke-width="${Math.min(t.epaisseur,6)}"${i} stroke-linecap="round"/>${n}</svg>`}return`<span class="type-emoji">${e.emoji}</span>`}function ie(e,o=""){const n=document.getElementById("listeTypes"),i=oe(o.trim());n.innerHTML="";const a=t.find(e=>e.id===X);a&&te.add(a.groupe);const r=[];for(const o of t){if(!o.geoms.includes(e))continue;if(i&&!oe(o.label).includes(i))continue;let t=r.find(e=>e.nom===o.groupe);t||(t={nom:o.groupe,types:[]},r.push(t)),t.types.push(o)}if(r.length)for(const e of r){const t=""!==i||te.has(e.nom);if(!i){const o=document.createElement("div");o.className="type-groupe",o.innerHTML=`<span class="chevron">${t?"▾":"▸"}</span> ${e.nom}…`,o.onclick=()=>{te.has(e.nom)?te.delete(e.nom):te.add(e.nom),ie(ee,document.getElementById("inpRechercheType").value)},n.appendChild(o)}if(t)for(const t of e.types){const e=document.createElement("div");e.className="type-item"+(X===t.id?" sel":""),e.innerHTML=ne(t)+`<span>${t.label}</span>`,e.onclick=()=>{X=t.id,n.querySelectorAll(".type-item").forEach(e=>e.classList.remove("sel")),e.classList.add("sel"),se()},n.appendChild(e)}}else n.innerHTML='<div class="type-vide">Aucun type trouvé — effacez la recherche et choisissez « Autre ».</div>'}document.getElementById("inpRechercheType").addEventListener("input",function(){ie(ee,this.value)});const ae=document.getElementById("selPrefecture"),re=document.getElementById("selSousPref");for(const e of Object.keys(o)){const t=document.createElement("option");t.value=e,t.textContent=e,ae.appendChild(t)}function se(){const e=t.find(e=>e.id===X);document.getElementById("blocResidentiel").style.display=e&&e.champsAdmin?"block":"none",document.getElementById("blocEtat").style.display=e&&e.champEtat?"block":"none",document.getElementById("blocRoute").style.display=e&&e.champsRoute?"block":"none"}ae.addEventListener("change",function(){re.innerHTML='<option value="">— Sous-préfecture / Commune —</option>';const e=o[this.value]||[];for(const t of e){const e=document.createElement("option");e.value=t,e.textContent=t,re.appendChild(e)}re.disabled=0===e.length});const le=document.getElementById("selPraticabilite"),ue=document.getElementById("selRevetement"),me={pieds:"🚶 Pieds seulement",pieds_moto:"🚶🏍️ Pieds et moto",pieds_moto_voiture:"🚶🏍️🚗 Pieds, moto et voiture",tous:"🚶🏍️🚗🚛 Tous véhicules"},ce={bitume:"🛣️ Bitumée",beton:"🏗️ Bétonnée",bombee:"🪨 Bombée (latérite)",naturel:"🌿 État naturel"},de=document.getElementById("selEtat"),pe={bon:"🟢 Bon",menace:"🟠 Menacé",degrade:"🔴 Dégradé"};let ge=null;try{ge=JSON.parse(localStorage.getItem("gc_compte")||"null")}catch(e){}function ye(){return ge?ge.prenom+" "+ge.nom:""}function be(){document.getElementById("quiCompte").textContent=ge?ye():"Aucun compte"}function he(){document.getElementById("cNom").value=ge?ge.nom:"",document.getElementById("cPrenom").value=ge?ge.prenom:"",document.getElementById("overlayCompte").style.display="flex"}document.getElementById("btnCompte").onclick=he,document.getElementById("btnModifCompte").onclick=he,document.getElementById("btnCompteOk").onclick=()=>{const e=document.getElementById("cNom").value.trim(),t=document.getElementById("cPrenom").value.trim();if(!e)return Re("Indiquez votre nom.");if(!t)return Re("Indiquez votre prénom.");ge={nom:e,prenom:t,telephone:"",email:""};try{localStorage.setItem("gc_compte",JSON.stringify(ge))}catch(e){}document.getElementById("overlayCompte").style.display="none",be(),Re("Bienvenue, "+t+" ! Votre compte est prêt.")};let fe=null,ve=null;function Ee(){document.getElementById("panneauCommentaires").classList.remove("ouvert"),fe=null}async function Be(){const t=document.getElementById("commListe");t.innerHTML='<div id="commVide">Chargement…</div>';try{const o=await fetch(e+"?action=commentaires&id="+encodeURIComponent(fe)),n=await o.json();if(!n.ok||!n.commentaires.length)return void(t.innerHTML='<div id="commVide">Aucun commentaire pour l’instant — soyez le premier !</div>');t.innerHTML=n.commentaires.map(e=>`<div class="comm-item">\n        <span class="comm-auteur">${i(e.auteur)}</span>\n        <span class="comm-date">${i(e.date)}</span>\n        <div class="comm-texte">${i(e.texte)}</div>\n      </div>`).join("")}catch(e){t.innerHTML='<div id="commVide">Impossible de charger les commentaires.</div>'}}function Ce(){g=null,document.getElementById("formTitre").textContent={point:"Nouveau lieu",ligne:"Nouvelle ligne",polygone:"Nouvelle zone"}[s],X=null,ee=s,te=new Set,document.getElementById("inpRechercheType").value="",document.getElementById("blocResidentiel").style.display="none",document.getElementById("blocEtat").style.display="none",de.value="",document.getElementById("blocRoute").style.display="none",le.value="",ue.value="",document.getElementById("labelNom").textContent="polygone"===s?"Nom (facultatif)":"Nom de l’entité *",Se(),ae.value="",re.innerHTML='<option value="">— Sous-préfecture / Commune —</option>',re.disabled=!0,document.getElementById("inpQuartier").value="",ie(s),document.getElementById("inpNom").value="",document.getElementById("inpNotes").value="",Q.style.display="flex"}function ke(e,t,o,n){const i=Math.PI/180,a=(o-e)*i,r=(n-t)*i,s=Math.sin(a/2)**2+Math.cos(e*i)*Math.cos(o*i)*Math.sin(r/2)**2;return 12742e3*Math.atan2(Math.sqrt(s),Math.sqrt(1-s))}function _e(e){if("Point"===e.type)return[e.coordinates[1],e.coordinates[0]];const t="LineString"===e.type?e.coordinates:e.coordinates[0];let o=0,n=0;for(const e of t)n+=e[0],o+=e[1];return[o/t.length,n/t.length]}function Ie(e,t,o,n){const[i,s]=_e(o),l=[...a,...r];for(const e of l){if(e.categorie!==t)continue;const[o,a]=_e(e.geom_geojson),r=ke(i,s,o,a);if(r<n)return{contribution:e,distance:Math.round(r)}}return null}document.getElementById("btnCommFermer").onclick=Ee,document.getElementById("btnCommFermer2").onclick=Ee,document.getElementById("panneauCommentaires").addEventListener("click",function(e){e.target===this&&Ee()}),document.addEventListener("click",async function(e){const t=e.target.closest(".btn-commentaires");if(!t)return;fe=t.dataset.id,ve=t.dataset.type;const o=t.dataset.nom;document.getElementById("commNomEntite").textContent=o?"— "+o:"",document.getElementById("commTextarea").value="",document.getElementById("panneauCommentaires").classList.add("ouvert"),await Be()}),document.getElementById("btnCommEnvoyer").onclick=async()=>{const t=document.getElementById("commTextarea").value.trim();if(!t)return Re("Écrivez un commentaire avant d’envoyer.");if(!ge)return Re("Créez votre compte 👤 pour commenter."),void(document.getElementById("overlayCompte").style.display="flex");const o=ge.prenom+(ge.nom?" "+ge.nom.charAt(0)+".":""),n=document.getElementById("btnCommEnvoyer");n.disabled=!0,n.textContent="⏳ Envoi…";try{const n=await fetch(e+"?action=add_commentaire",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contribution_id:fe,contribution_type:ve,device_id:c,auteur:o,texte:t})}),i=await n.json();i.ok?(document.getElementById("commTextarea").value="",Re("Commentaire envoyé !"),await Be()):Re(i.erreur||"Erreur lors de l’envoi.")}catch(e){Re("Pas de réseau — réessayez.")}finally{n.disabled=!1,n.textContent="📤 Envoyer"}},document.getElementById("btnClassement").onclick=async()=>{const t=document.getElementById("overlayClassement"),o=document.getElementById("listeClassement");t.style.display="flex",o.textContent="Chargement…";try{const t=await fetch(e+"?action=classement"),n=await t.json();if(!n.ok||!n.classement.length)return void(o.textContent="Aucune contribution validée pour l’instant — soyez le premier !");const a=["🥇","🥈","🥉"];o.innerHTML=n.classement.map((e,t)=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid #f2f2f2">\n        <span style="width:30px;text-align:center;font-weight:700">${a[t]||t+1}</span>\n        <span style="flex:1">${i(e.contributeur)}</span>\n        <span style="font-weight:700;color:#009460">${e.n}</span>\n      </div>`).join("")}catch(e){o.textContent="Classement indisponible (pas de réseau ?)."}},document.getElementById("btnClassementFermer").onclick=()=>document.getElementById("overlayClassement").style.display="none",document.getElementById("overlayClassement").addEventListener("click",function(e){e.target===this&&(this.style.display="none")}),be(),document.getElementById("btnComptePlusTard").onclick=()=>{document.getElementById("overlayCompte").style.display="none"},document.getElementById("overlayCompte").addEventListener("click",function(e){e.target===this&&(this.style.display="none")}),document.getElementById("btnFormAnnuler").onclick=()=>{g=null,Q.style.display="none",Y(null)};let xe="";const je=document.getElementById("inpPhoto");function Se(){xe="",je.value="",document.getElementById("photoApercu").style.display="none",document.getElementById("btnPhoto").style.display="flex"}function we(e,t){const o=t.map(e=>[e[1],e[0]]);if("point"===e)return{type:"Point",coordinates:o[0]};if("ligne"===e)return{type:"LineString",coordinates:o};const n=o.slice();return n[0][0]===n[n.length-1][0]&&n[0][1]===n[n.length-1][1]||n.push(n[0]),{type:"Polygon",coordinates:[n]}}document.getElementById("btnPhoto").onclick=()=>je.click(),je.addEventListener("change",function(){const e=this.files&&this.files[0];if(!e)return;const t=URL.createObjectURL(e),o=new Image;o.onload=()=>{const e=1024;let n=o.width,i=o.height;n>=i&&n>e?(i=Math.round(i*e/n),n=e):i>n&&i>e&&(n=Math.round(n*e/i),i=e);const a=document.createElement("canvas");a.width=n,a.height=i,a.getContext("2d").drawImage(o,0,0,n,i),xe=a.toDataURL("image/jpeg",.65),URL.revokeObjectURL(t),document.getElementById("photoImg").src=xe,document.getElementById("photoApercu").style.display="flex",document.getElementById("btnPhoto").style.display="none"},o.onerror=()=>{URL.revokeObjectURL(t),Re("Image illisible.")},o.src=t}),document.getElementById("btnPhotoRetirer").onclick=Se,document.getElementById("btnEnregistrer").onclick=()=>{if(!X)return Re("Choisissez une catégorie.");if(("point"===ee||"ligne"===ee)&&!document.getElementById("inpNom").value.trim())return Re("Indiquez le nom de l’entité ajoutée.");let t={};if("none"!==document.getElementById("blocResidentiel").style.display){const e=re.value,o=document.getElementById("inpQuartier").value.trim();if(!e)return Re("Choisissez la sous-préfecture de rattachement.");t={prefecture:ae.value,sous_prefecture:e},o&&(t.quartier=o)}if("none"!==document.getElementById("blocEtat").style.display&&de.value&&(t.etat=de.value),"none"!==document.getElementById("blocRoute").style.display&&(le.value&&(t.praticabilite=le.value),ue.value&&(t.revetement=ue.value)),g){const o={categorie:X,nom:document.getElementById("inpNom").value.trim(),notes:document.getElementById("inpNotes").value.trim(),attributs:t};if("local"===g.source){const e=r.find(e=>e.id===g.id);e&&Object.assign(e,o),u(),g=null,Q.style.display="none",F(),A(),P(),Re("Contribution modifiée.")}else fetch(e+"?action=update",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:g.id,geom_type:g.geom_type,device_id:c,...o})}).then(e=>e.json()).then(e=>{e.ok?(Re("Contribution modifiée."),O()):Re(e.erreur||"Modification impossible.")}).catch(()=>Re("Pas de réseau — réessayez plus tard.")),g=null,Q.style.display="none";return}if(!ge)return he(),Re("Créez d’abord votre compte contributeur.");const o=we(s,l),i=Ie(s,X,o,"point"===s?75:150);if(i){const e=n(i.contribution.categorie),t=i.contribution.nom||e.label;if(!confirm("⚠️ Attention : « "+t+" » ("+e.label+") existe déjà à "+i.distance+" m d’ici.\n\nVotre ajout est-il bien un lieu DIFFÉRENT ?\n\nOK = oui, enregistrer quand même\nAnnuler = ne pas créer de doublon"))return}const a=ye(),d={id:m(),geom_type:s,geom_geojson:o,categorie:X,nom:document.getElementById("inpNom").value.trim(),notes:document.getElementById("inpNotes").value.trim(),contributeur:a,attributs:t,device_id:c,compte:ge,photo:xe};r.push(d),p(d.id),u(),Q.style.display="none",Y(null),F(),A(),P(),Re("Merci ! Contribution enregistrée."),U()};const Le=L.Control.extend({options:{position:"topright"},onAdd:function(){const e=L.DomUtil.create("div","recherche-box");return e.innerHTML='\n      <form id="formRecherche">\n        <input id="inpRecherche" type="text" placeholder="Rechercher un lieu en Guinée…" autocomplete="off">\n        <button type="submit" title="Rechercher">🔍</button>\n      </form>\n      <div id="resRecherche"></div>',L.DomEvent.disableClickPropagation(e),L.DomEvent.disableScrollPropagation(e),e}});y.addControl(new Le);let Te=null,Me=null,Fe=0;document.getElementById("inpRecherche").addEventListener("input",function(){const e=this.value.trim();clearTimeout(Me);const t=document.getElementById("resRecherche");e.length<3?t.style.display="none":Me=setTimeout(async()=>{const o=++Fe;try{const n=await fetch("https://photon.komoot.io/api/?q="+encodeURIComponent(e)+"&lang=fr&limit=6&lat=11.3182&lon=-12.2833"),i=await n.json();if(o!==Fe)return;const a=(i.features||[]).filter(e=>"GN"===(e.properties.countrycode||""));if(!a.length)return void(t.style.display="none");t.innerHTML="";for(const o of a){const n=o.properties,i=[n.name,n.district||n.city||n.county,n.state].filter(Boolean).join(", "),a=document.createElement("div");a.className="res",a.textContent=i||e,a.onclick=()=>{t.style.display="none",document.getElementById("inpRecherche").value=i,document.getElementById("inpRecherche").blur();const e=o.geometry.coordinates[0],a=o.geometry.coordinates[1];Te&&y.removeLayer(Te),Te=L.marker([a,e]).addTo(y).bindPopup(i).openPopup(),n.extent?y.fitBounds([[n.extent[1],n.extent[0]],[n.extent[3],n.extent[2]]],{maxZoom:17}):y.setView([a,e],16)},t.appendChild(a)}const r=document.createElement("div");r.className="credit",r.textContent="Suggestions © Photon / OpenStreetMap — Entrée pour plus de résultats",t.appendChild(r),t.style.display="block"}catch(e){}},450)}),document.getElementById("formRecherche").addEventListener("submit",async e=>{e.preventDefault(),document.getElementById("inpRecherche").blur();const t=document.getElementById("inpRecherche").value.trim(),o=document.getElementById("resRecherche");if(t){o.style.display="block",o.innerHTML='<div class="res">Recherche…</div>';try{const e="https://nominatim.openstreetmap.org/search?format=jsonv2&q="+encodeURIComponent(t)+"&countrycodes=gn&limit=5&accept-language=fr",n=await fetch(e),i=await n.json();if(!i.length)return void(o.innerHTML='<div class="res">Aucun résultat en Guinée pour « '+t+' ».</div><div class="credit">Recherche © Nominatim / OpenStreetMap</div>');o.innerHTML="";for(const e of i){const t=document.createElement("div");t.className="res",t.textContent=e.display_name,t.onclick=()=>{o.style.display="none";const t=parseFloat(e.lat),n=parseFloat(e.lon);if(Te&&y.removeLayer(Te),Te=L.marker([t,n]).addTo(y).bindPopup(e.display_name).openPopup(),e.boundingbox){const t=e.boundingbox.map(Number);y.fitBounds([[t[0],t[2]],[t[1],t[3]]],{maxZoom:17})}else y.setView([t,n],16)},o.appendChild(t)}const a=document.createElement("div");a.className="credit",a.textContent="Recherche © Nominatim / OpenStreetMap",o.appendChild(a)}catch(e){o.innerHTML='<div class="res">Recherche impossible (pas de réseau ?).</div>'}}});const Ae=document.getElementById("panel"),De=document.getElementById("voile");function Ke(e){Ae.classList.toggle("ouvert",e),De.classList.toggle("ouvert",e)}let Pe;function Re(e){const t=document.getElementById("toast");t.textContent=e,t.style.display="block",clearTimeout(Pe),Pe=setTimeout(()=>t.style.display="none",2800)}document.getElementById("btnListe").onclick=()=>Ke(!Ae.classList.contains("ouvert")),document.getElementById("fermerPanel").onclick=()=>Ke(!1),De.onclick=()=>Ke(!1),R(),P(),F(),A(),localStorage.getItem("gc_notif_comms_ts")||localStorage.setItem("gc_notif_comms_ts",Date.now().toString()),O(),U(),"serviceWorker"in navigator&&(navigator.serviceWorker.getRegistrations().then(e=>{e.forEach(e=>e.unregister())}),"caches"in window&&caches.keys().then(e=>e.forEach(e=>caches.delete(e)))),function(){if(window.matchMedia("(display-mode: standalone)").matches||!0===window.navigator.standalone)return;const e=parseInt(localStorage.getItem("gc_install_ignore")||"0");if(Date.now()-e<2592e5)return;const t=navigator.userAgent||"",o=/FBAN|FBAV|FB_IAB|FBIOS/i.test(t)||/Instagram|Line|Twitter|Snapchat|TikTok/i.test(t),n=/iPad|iPhone|iPod/.test(t)&&!window.MSStream,i=/Android/.test(t),a=document.getElementById("banniereInstall"),r=document.getElementById("biTexte"),s=document.getElementById("biBtns");let l=null;if(o){if(r.textContent="",document.getElementById("instrFacebook").style.display="block",s.innerHTML='<button class="bi-btn-non" id="btnPasMaintenant">Fermer</button>',i){document.getElementById("instrAndroid").style.display="block";const e="intent://"+location.host+location.pathname+"#Intent;scheme=https;package=com.android.chrome;end";document.getElementById("btnOuvrirChrome").onclick=()=>{location.href=e},setTimeout(()=>{location.href=e},1200)}else document.getElementById("instrIosFb").style.display="block",r.textContent="";a.style.display="block"}else n?(r.textContent="Ajoutez Guinée Carto à votre écran d’accueil :",document.getElementById("instrIos").style.display="block",s.innerHTML='<button class="bi-btn-non" id="btnPasMaintenant">Fermer</button>',a.style.display="block"):(r.textContent="Installez Guinée Carto sur votre téléphone — icône sur l’écran d’accueil, accès hors ligne, pas de pub.",a.style.display="block",window.addEventListener("beforeinstallprompt",e=>{e.preventDefault(),l=e,document.getElementById("instrChrome").style.display="none";const t=document.getElementById("btnInstaller");t&&(t.style.display="")}),setTimeout(()=>{if(!l&&"block"===a.style.display){document.getElementById("instrChrome").style.display="block";const e=document.getElementById("btnInstaller");e&&(e.style.display="none"),s.innerHTML='<button class="bi-btn-non" id="btnPasMaintenant">Fermer</button>'}},4e3),window.addEventListener("appinstalled",()=>{a.style.display="none"}));document.getElementById("btnInstaller")&&document.addEventListener("click",function(e){"btnInstaller"===e.target.id&&l&&(l.prompt(),l.userChoice.then(()=>{a.style.display="none",l=null}))}),document.addEventListener("click",function(e){"btnPasMaintenant"===e.target.id&&(a.style.display="none",localStorage.setItem("gc_install_ignore",Date.now().toString()))})}();
+// Filtres du panneau Contributions
+document.querySelectorAll(".pan-stats .stat").forEach(b=>b.addEventListener("click",()=>{FL=FL===b.dataset.f?"tous":b.dataset.f,A()}));
+document.getElementById("chipMiennes").addEventListener("click",()=>{FM=!FM,A()});
+let tFiltre;document.getElementById("inpFiltre").addEventListener("input",function(){clearTimeout(tFiltre);const v=this.value;tFiltre=setTimeout(()=>{FQ=v,A()},150)});
+</script>
+<div style="position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:99999;background:#FF9500;color:#fff;font:600 11px/1 sans-serif;padding:4px 10px;border-radius:0 0 6px 6px;pointer-events:none">VERSION DÉMO</div>
+</body>
+</html>

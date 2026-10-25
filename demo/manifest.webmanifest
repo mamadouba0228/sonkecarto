@@ -1,0 +1,17 @@
+{
+  "name": "Guinée Carto — Cartographie participative de la Guinée (Démo)",
+  "short_name": "GuinéeCarto Démo",
+  "description": "Contribuez à la carte de la Guinée : lieux, routes, cours d'eau, quartiers et zones.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#009460",
+  "theme_color": "#009460",
+  "lang": "fr",
+  "icons": [
+    { "src": "icone-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icone-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icone-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

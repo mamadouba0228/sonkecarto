@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>[DÉMO] Guinée Carto — Administration</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  :root {
+    --vert: #009460; --vert-fonce: #00714a; --vert-clair: #e3f5ec;
+    --texte: #1d2823; --bord: #e3e8e5; --fond: #f4f7f5;
+    /* Couleurs de statut (mêmes teintes que l'application publique) */
+    --pin-attente: #E8871E; --st-attente: #94590a; --st-attente-bg: #fff4e2;
+    --pin-valide: #009460;  --st-valide: #0a5c40;  --st-valide-bg: #e3f5ec;
+    --pin-rejete: #c0392b;  --st-rejete: #9b2c2c;  --st-rejete-bg: #fdeeee;
+    --pin-osm: #1d4f91;     --st-osm: #1d4f91;     --st-osm-bg: #e3ecfa;
+  }
+  body { color: var(--texte); -webkit-font-smoothing: antialiased; }
+
+  #appbar {
+    height: 56px; background: linear-gradient(120deg, #24352d 0%, #1f2d27 60%, #17231e 100%); color: #fff;
+    display: flex; align-items: center; gap: 12px; padding: 0 16px; box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    position: relative; z-index: 1001;
+  }
+  #appbar h1 { font-size: 17px; font-weight: 600; flex: 1; display: flex; align-items: center; gap: 8px; }
+  #appbar h1 .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    background: rgba(159,225,203,.16); color: #9fe1cb; padding: 3px 8px; border-radius: 20px; }
+  #appbar a { color: #9fe1cb; font-size: 13px; text-decoration: none; padding: 6px 10px; border-radius: 8px; }
+  #appbar a:hover { background: rgba(255,255,255,.08); }
+
+  /* Connexion */
+  #login { display: flex; align-items: center; justify-content: center; height: calc(100% - 56px);
+    background: radial-gradient(circle at 30% 20%, #e3f5ec 0%, var(--fond) 55%); padding: 16px; }
+  #login form { background: #fff; border-radius: 18px; padding: 30px 28px; width: 360px; box-shadow: 0 10px 34px rgba(16,40,30,.12); text-align: center; }
+  #login .cadenas { width: 56px; height: 56px; border-radius: 16px; background: var(--vert-clair); font-size: 26px;
+    display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+  #login h2 { font-size: 18px; margin-bottom: 4px; }
+  #login .sous-titre { font-size: 12.5px; color: #7d8a83; margin-bottom: 18px; }
+  #login input { width: 100%; padding: 11px 12px; border: 1.5px solid var(--bord); border-radius: 10px; font-size: 14px; margin-bottom: 12px; background: #f8faf9; }
+  #login input:focus { outline: none; border-color: var(--vert); background: #fff; }
+  #login button { width: 100%; border: none; background: var(--vert); color: #fff; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  #login button:hover { background: var(--vert-fonce); }
+  #loginErr { color: var(--st-rejete); background: var(--st-rejete-bg); border-radius: 8px; padding: 8px; font-size: 12px; margin-bottom: 12px; display: none; }
+
+  /* Interface admin */
+  #admin { display: none; height: calc(100% - 56px); }
+  #admin.actif { display: flex; }
+  #map { flex: 1; }
+  #cote { width: 420px; border-left: 1px solid var(--bord); display: flex; flex-direction: column; background: var(--fond); }
+  #cote header { padding: 14px 16px 10px; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; background: #fff; }
+  #cote header span#titrePanneau { flex: 1; }
+  #nbFiches { background: var(--vert-clair); color: var(--vert-fonce); font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 20px; }
+  #nbFiches:empty { display: none; }
+  #btnRafraichir { border: 1.5px solid var(--bord); background: #fff; border-radius: 10px; width: 34px; height: 32px; cursor: pointer; font-size: 16px; color: #445; }
+  #btnRafraichir:hover { border-color: var(--vert); color: var(--vert); }
+  #pendingListe { flex: 1; overflow-y: auto; padding: 10px 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Fiche de modération */
+  .fiche {
+    position: relative; flex-shrink: 0; background: #fff; border-radius: 14px; padding: 12px 14px 12px 17px; font-size: 13px;
+    box-shadow: 0 1px 2px rgba(16,40,30,.06), 0 0 0 1px rgba(16,40,30,.05); overflow: hidden;
+  }
+  .fiche::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c-st, var(--pin-attente)); }
+  .fiche.st-en_attente { --c-st: var(--pin-attente); }
+  .fiche.st-valide     { --c-st: var(--pin-valide); }
+  .fiche.st-rejete     { --c-st: var(--pin-rejete); }
+  .fiche.st-importe_osm { --c-st: var(--pin-osm); }
+  .fiche-tete { display: flex; gap: 11px; align-items: flex-start; }
+  .fiche-ico { flex: 0 0 42px; height: 42px; border-radius: 12px; background: #f1f5f3; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .fiche-noms { flex: 1; min-width: 0; }
+  .fiche .titre { font-size: 14.5px; font-weight: 700; cursor: pointer; line-height: 1.3; }
+  .fiche .titre:hover { color: var(--vert); }
+  .fiche-type { font-size: 12px; color: #6b7872; margin-top: 1px; }
+  .fiche-photo { display: block; margin-top: 10px; border-radius: 10px; overflow: hidden; }
+  .fiche-photo img { display: block; width: 100%; height: 170px; object-fit: cover; background: #e9eeeb; transition: transform .2s; }
+  .fiche-photo:hover img { transform: scale(1.03); }
+  .fiche-note { margin-top: 10px; padding: 8px 10px; background: #f7f9f8; border-left: 3px solid var(--vert);
+    border-radius: 0 8px 8px 0; font-size: 12.5px; color: #3b4641; font-style: italic; }
+  .fiche-infos { margin-top: 10px; display: grid; gap: 5px; font-size: 12.5px; color: #3b4641; }
+  .fiche-ligne { display: flex; gap: 8px; min-width: 0; }
+  .fiche-ligne > span:first-child { width: 18px; text-align: center; flex-shrink: 0; }
+  .fiche-ligne > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+  .comms { margin-top: 10px; }
+  .btn-charger-comms { background: none; border: 1.5px solid var(--bord); border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--vert); font-family: inherit; }
+  .btn-charger-comms:hover { border-color: var(--vert); }
+  .fiche .actions { display: flex; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #eef1ef; }
+  .fiche .actions button { flex: 1; border: none; border-radius: 9px; padding: 8px 10px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .fiche .actions .b-voir { flex: 0 0 auto; }
+  .b-ok  { background: var(--vert); color: #fff; }
+  .b-ok:hover { background: var(--vert-fonce); }
+  .b-non { background: var(--st-rejete-bg); color: var(--st-rejete); }
+  .b-non:hover { background: #f5cccc; }
+  .b-att { background: var(--st-attente-bg); color: var(--st-attente); }
+  .b-att:hover { background: #f7e3bb; }
+
+  #filtres { display: flex; gap: 6px; padding: 4px 16px 12px; border-bottom: 1px solid var(--bord); flex-wrap: wrap; background: #fff; }
+  .filtre { border: 1.5px solid var(--bord); background: #fff; color: #445; border-radius: 20px;
+    padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .filtre:hover { border-color: var(--vert); }
+  .filtre.actif { background: var(--vert); border-color: var(--vert); color: #fff; }
+  .badge-statut { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+  .badge-statut::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .badge-statut.en_attente { background: var(--st-attente-bg); color: var(--st-attente); }
+  .badge-statut.valide { background: var(--st-valide-bg); color: var(--st-valide); }
+  .badge-statut.rejete { background: var(--st-rejete-bg); color: var(--st-rejete); }
+  .badge-statut.importe_osm { background: var(--st-osm-bg); color: var(--st-osm); }
+  .comm-admin { background: #f4f7f5; border-radius: 4px 12px 12px 12px; padding: 8px 10px; margin: 6px 0; font-size: 12px; }
+  .comm-admin-tete { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .comm-admin-aut { font-weight: 700; color: #009460; }
+  .comm-admin-txt { color: #333; margin-top: 4px; line-height: 1.4; }
+  .btn-del-comm { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 6px; }
+  .btn-del-comm:hover { background: var(--st-rejete-bg); }
+
+  /* Tableau de bord */
+  #dashboard { display: none; flex: 1; overflow-y: auto; padding: 4px 14px 16px; }
+  #dashboard h3 { font-size: 14px; margin: 16px 0 10px; }
+  #dashboard table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; background: #fff;
+    border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px rgba(16,40,30,.06); }
+  #dashboard th, #dashboard td { border-bottom: 1px solid #eef1ef; padding: 7px 6px; text-align: center; }
+  #dashboard th { background: #f2f6f3; font-weight: 700; color: #445; }
+  #dashboard td:first-child, #dashboard th:first-child { text-align: left; padding-left: 12px; }
+  #dashboard tr:hover td { background: #fafcfb; }
+  #dashboard tr.total td { background: var(--vert-clair); font-weight: 700; color: var(--vert-fonce); border-bottom: none; }
+  #btnCsv { border: 1.5px solid var(--bord); background: #fff; border-radius: 10px; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; margin-bottom: 10px; font-family: inherit; }
+  #btnCsv:hover { border-color: var(--vert); color: var(--vert); }
+  .jauge { display: inline-block; min-width: 26px; padding: 6px 12px; border-radius: 20px; font-weight: 700; font-size: 13px; }
+  .jauge.bon { background: var(--st-valide-bg); color: var(--st-valide); }
+  .jauge.menace { background: var(--st-attente-bg); color: var(--st-attente); }
+  .jauge.degrade { background: var(--st-rejete-bg); color: var(--st-rejete); }
+  .b-voir { background: #eef2ef; color: #333; }
+  .b-voir:hover { background: #dfe8e2; }
+  #vide { margin: auto 0; padding: 30px 14px; color: #7d8a83; font-size: 13px; text-align: center; line-height: 1.6; }
+  #cote footer { padding: 12px; border-top: 1px solid var(--bord); display: flex; flex-direction: column; gap: 8px; background: #fff; }
+  .btn { border: none; border-radius: 10px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; color: inherit; display: block; }
+  .btn.primaire { background: var(--vert); color: #fff; }
+  .btn.primaire:hover { background: var(--vert-fonce); }
+  .btn.secondaire { background: #eef2ef; color: #333; }
+  .btn.secondaire:hover { background: #dfe8e2; }
+
+  /* Marqueurs et fiches sur la carte */
+  .pin-wrap { background: none; border: none; }
+  .pin {
+    width: 36px; height: 36px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+    background: #fff; border: 3px solid var(--c-pin, var(--pin-attente));
+    box-shadow: 0 2px 6px rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center;
+  }
+  .pin span { transform: rotate(45deg); font-size: 18px; line-height: 1; }
+  .pin-en_attente { --c-pin: var(--pin-attente); }
+  .pin-valide { --c-pin: var(--pin-valide); }
+  .pin-rejete { --c-pin: var(--pin-rejete); }
+  .pin-importe_osm { --c-pin: var(--pin-osm); }
+  .pp-popup .leaflet-popup-content-wrapper { border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.22); }
+  .pp-popup .leaflet-popup-content { margin: 12px 14px; font-family: inherit; line-height: 1.4; }
+  .pp-titre { font-size: 14px; font-weight: 700; }
+  .pp-type { font-size: 12px; color: #6b7872; margin-top: 1px; }
+  .pp-note { font-size: 12px; color: #3b4641; font-style: italic; margin-top: 6px; }
+
+  /* ---------- Recherche Nominatim ---------- */
+  .recherche-box { width: 260px; font-family: inherit; }
+  .recherche-box form { display: flex; gap: 4px; }
+  .recherche-box input {
+    flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 10px;
+    font-size: 13px; background: #fff; box-shadow: 0 1px 5px rgba(0,0,0,.25);
+  }
+  .recherche-box input:focus { outline: none; border-color: #009460; }
+  .recherche-box button {
+    border: none; background: #009460; color: #fff; border-radius: 10px;
+    width: 38px; font-size: 15px; cursor: pointer; box-shadow: 0 1px 5px rgba(0,0,0,.25);
+  }
+  .recherche-box button:hover { background: #00714a; }
+  #resRecherche { margin-top: 4px; background: #fff; border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3); overflow: hidden; display: none; }
+  #resRecherche .res { padding: 8px 10px; font-size: 12px; cursor: pointer;
+    border-bottom: 1px solid #f0f0f0; line-height: 1.4; }
+  #resRecherche .res:hover { background: #f0f8f4; }
+  #resRecherche .credit { padding: 4px 10px; font-size: 10px; color: #aaa; }
+
+  @supports (height: 100dvh) {
+    #login, #admin { height: calc(100dvh - 56px); }
+  }
+
+  /* ---------- Écrans étroits ---------- */
+  @media (max-width: 800px) {
+    #appbar h1 { font-size: 14px; }
+    #admin.actif { flex-direction: column; }
+    #map { min-height: 45vh; }
+    #cote { width: 100%; flex: 1; min-height: 0; border-left: none; border-top: 1px solid #ddd; }
+    .fiche button { padding: 9px 14px; }
+    .recherche-box { width: min(230px, calc(100vw - 120px)); }
+    .recherche-box input { font-size: 16px; }
+    #login form { width: 100%; max-width: 340px; }
+    #login input { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="appbar">
+  <h1>Guinée Carto <span class="tag">Modération</span></h1>
+  <a href="index.html">← Retour à la carte publique</a>
+</div>
+
+<div id="login">
+  <form id="loginForm">
+    <div class="cadenas">🔐</div>
+    <h2>Accès modérateur</h2>
+    <div class="sous-titre">Validez les contributions avant leur publication.</div>
+    <div id="loginErr">Mot de passe incorrect.</div>
+    <input type="password" id="inpToken" placeholder="Mot de passe admin (config.php)" autofocus>
+    <button type="submit">Se connecter</button>
+  </form>
+</div>
+
+<div id="admin">
+  <div id="map"></div>
+  <aside id="cote">
+    <header><span id="titrePanneau">En attente de validation</span><span id="nbFiches"></span><button id="btnRafraichir" title="Rafraîchir">↻</button></header>
+    <div id="filtres">
+      <button class="filtre actif" data-statut="en_attente">⏳ En attente</button>
+      <button class="filtre" data-statut="valide">✓ Validées</button>
+      <button class="filtre" data-statut="rejete">✕ Rejetées</button>
+      <button class="filtre" data-statut="importe_osm">🌍 Importées</button>
+      <button class="filtre" data-statut="tous">Toutes</button>
+      <button class="filtre" data-statut="stats">📊 Tableau de bord</button>
+    </div>
+    <div id="pendingListe"><div id="vide">Chargement…</div></div>
+    <div id="dashboard"></div>
+    <footer>
+      <a class="btn primaire" id="lienExportValide" href="#">⬇️ Exporter les validées — 3 couches (JOSM)</a>
+      <div style="display:flex;gap:6px">
+        <a class="btn secondaire" id="expPts" href="#" style="flex:1;font-size:11px">📌 Ponctuels</a>
+        <a class="btn secondaire" id="expLin" href="#" style="flex:1;font-size:11px">〰️ Linéaires</a>
+        <a class="btn secondaire" id="expSrf" href="#" style="flex:1;font-size:11px">⬠ Surfaciques</a>
+      </div>
+      <a class="btn secondaire" id="lienExportAttente" href="#">⬇️ Exporter les en-attente (GeoJSON)</a>
+    </footer>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const API = 'https://lamadgeo.alwaysdata.net/sonkecarto/api.php';
+let token = '';
+let carte = null, couche = null;
+let pending = [];
+
+const TYPES = [
+  { id: 'village', label: 'Village / Quartier / Secteur', emoji: '🏘️', osm: 'place=village', geoms: ['point'], groupe: 'Zone résidentielle', champsAdmin: true },
+  { id: 'zone_residentielle', label: 'Zone résidentielle / Quartier', emoji: '🏘️', osm: 'landuse=residential', geoms: ['polygone'], groupe: 'Zone résidentielle', surf: { couleur: '#9E9E9E', remplissage: '#E0DFDF' }, champsAdmin: true },
+  { id: 'ecole', label: 'École primaire', emoji: '🏫', osm: 'amenity=school', geoms: ['point'], groupe: 'Éducation' },
+  { id: 'college_lycee', label: 'Collège / Lycée', emoji: '🎓', osm: 'amenity=school', geoms: ['point'], groupe: 'Éducation' },
+  { id: 'universite', label: 'Université / Institut', emoji: '🏛️', osm: 'amenity=university', geoms: ['point'], groupe: 'Éducation' },
+  { id: 'ecole_coranique', label: 'École coranique', emoji: '📖', osm: 'amenity=school;religion=muslim', geoms: ['point'], groupe: 'Éducation' },
+  { id: 'hopital', label: 'Hôpital', emoji: '🏥', osm: 'amenity=hospital', geoms: ['point'], groupe: 'Santé' },
+  { id: 'centre_sante', label: 'Centre de santé', emoji: '⚕️', osm: 'amenity=clinic', geoms: ['point'], groupe: 'Santé' },
+  { id: 'pharmacie', label: 'Pharmacie', emoji: '💊', osm: 'amenity=pharmacy', geoms: ['point'], groupe: 'Santé' },
+  { id: 'boulangerie', label: 'Boulangerie', emoji: '🥖', osm: 'shop=bakery', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'boucherie', label: 'Boucherie', emoji: '🥩', osm: 'shop=butcher', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'soudure', label: 'Souderie / Atelier de soudure', emoji: '⚙️', osm: 'craft=metal_construction', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'atelier_mecanique', label: 'Atelier mécanique', emoji: '🔧', osm: 'shop=car_repair', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'maternite', label: 'Maternité', emoji: '🤱', osm: 'amenity=clinic;healthcare=midwife', geoms: ['point'], groupe: 'Santé' },
+  { id: 'pompe', label: 'Pompe / Point d\'eau', emoji: '🚰', osm: 'amenity=drinking_water', geoms: ['point'], groupe: 'Eau' },
+  { id: 'forage', label: 'Forage', emoji: '💧', osm: 'man_made=water_well;pump=powered', geoms: ['point'], groupe: 'Eau' },
+  { id: 'puits', label: 'Puits', emoji: '⛲', osm: 'man_made=water_well', geoms: ['point'], groupe: 'Eau' },
+  { id: 'chateau_eau', label: 'Château d\'eau', emoji: '🗼', osm: 'man_made=water_tower', geoms: ['point'], groupe: 'Eau' },
+  { id: 'source', label: 'Source naturelle', emoji: '🌊', osm: 'natural=spring', geoms: ['point'], groupe: 'Eau', champEtat: true },
+  { id: 'source_menacee', label: 'Source en voie de tarissement', emoji: '⚠️', osm: 'natural=spring;intermittent=yes', geoms: ['point'], groupe: 'Eau', champsAdmin: true },
+  { id: 'source_tarie', label: 'Source tarie / disparue', emoji: '🚱', osm: '', geoms: ['point'], groupe: 'Eau', champsAdmin: true },
+  { id: 'mosquee', label: 'Mosquée', emoji: '🕌', osm: 'amenity=place_of_worship;religion=muslim', geoms: ['point'], groupe: 'Religion' },
+  { id: 'eglise', label: 'Église', emoji: '⛪', osm: 'amenity=place_of_worship;religion=christian', geoms: ['point'], groupe: 'Religion' },
+  { id: 'marche', label: 'Marché', emoji: '🛒', osm: 'amenity=marketplace', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'boutique', label: 'Boutique / Kiosque', emoji: '🏪', osm: 'shop=convenience', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'supermarche', label: 'Supermarché', emoji: '🛍️', osm: 'shop=supermarket', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'restaurant', label: 'Restaurant', emoji: '🍽️', osm: 'amenity=restaurant', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'cafe', label: 'Café', emoji: '☕', osm: 'amenity=cafe', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'resto_rapide', label: 'Restauration rapide', emoji: '🍔', osm: 'amenity=fast_food', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'bar', label: 'Bar', emoji: '🍹', osm: 'amenity=bar', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'banque', label: 'Banque', emoji: '🏦', osm: 'amenity=bank', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'microfinance', label: 'Microfinance / Transfert', emoji: '💱', osm: 'amenity=money_transfer', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'station_service', label: 'Station-service', emoji: '⛽', osm: 'amenity=fuel', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'hotel', label: 'Hôtel / Auberge', emoji: '🏨', osm: 'tourism=hotel', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'salon_coiffure', label: 'Salon de coiffure', emoji: '💈', osm: 'shop=hairdresser', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'atelier_garage', label: 'Atelier / Garage', emoji: '🔧', osm: 'shop=car_repair', geoms: ['point'], groupe: 'Commerce & services' },
+  { id: 'gare_routiere', label: 'Gare routière', emoji: '🚌', osm: 'amenity=bus_station', geoms: ['point'], groupe: 'Transport' },
+  { id: 'arret_bus', label: 'Arrêt de bus / taxi', emoji: '🚏', osm: 'highway=bus_stop', geoms: ['point'], groupe: 'Transport' },
+  { id: 'embarcadere', label: 'Port / Embarcadère', emoji: '⚓', osm: 'amenity=ferry_terminal', geoms: ['point'], groupe: 'Transport' },
+  { id: 'pont_pt', label: 'Pont', emoji: '🌉', osm: 'man_made=bridge', geoms: ['point'], groupe: 'Transport' },
+  { id: 'parking', label: 'Parking', emoji: '🅿️', osm: 'amenity=parking', geoms: ['point'], groupe: 'Transport' },
+  { id: 'mairie', label: 'Mairie', emoji: '🏛️', osm: 'amenity=townhall', geoms: ['point'], groupe: 'Administration & sécurité' },
+  { id: 'prefecture', label: 'Préfecture / Sous-préfecture', emoji: '🏢', osm: 'office=government', geoms: ['point'], groupe: 'Administration & sécurité' },
+  { id: 'poste_police', label: 'Poste de police', emoji: '👮', osm: 'amenity=police', geoms: ['point'], groupe: 'Administration & sécurité' },
+  { id: 'gendarmerie', label: 'Gendarmerie', emoji: '🪖', osm: 'amenity=police', geoms: ['point'], groupe: 'Administration & sécurité' },
+  { id: 'bureau_poste', label: 'Bureau de poste', emoji: '📮', osm: 'amenity=post_office', geoms: ['point'], groupe: 'Administration & sécurité' },
+  { id: 'parc', label: 'Parc / Espace vert', emoji: '🌳', osm: 'leisure=park', geoms: ['point'], groupe: 'Loisirs & divers' },
+  { id: 'terrain_sport', label: 'Terrain de sport', emoji: '⚽', osm: 'leisure=pitch', geoms: ['point'], groupe: 'Loisirs & divers' },
+  { id: 'stade', label: 'Stade', emoji: '🏟️', osm: 'leisure=stadium', geoms: ['point'], groupe: 'Loisirs & divers' },
+  { id: 'antenne', label: 'Antenne télécom', emoji: '📡', osm: 'man_made=mast', geoms: ['point'], groupe: 'Loisirs & divers' },
+  { id: 'cimetiere_pt', label: 'Cimetière', emoji: '🪦', osm: 'landuse=cemetery', geoms: ['point'], groupe: 'Loisirs & divers' },
+  { id: 'autre_point', label: 'Autre lieu', emoji: '📍', osm: '', geoms: ['point'], groupe: 'Loisirs & divers' },
+  { id: 'route_nationale', label: 'Route nationale', emoji: '🛣️', osm: 'highway=primary', geoms: ['ligne'], groupe: 'Routes principales', trait: { couleur: '#D6754C', epaisseur: 6, casing: true }, champsRoute: true },
+  { id: 'route_regionale', label: 'Route régionale', emoji: '🛣️', osm: 'highway=secondary', geoms: ['ligne'], groupe: 'Routes principales', trait: { couleur: '#F4C64E', epaisseur: 5, casing: true }, champsRoute: true },
+  { id: 'route_locale', label: 'Route locale', emoji: '🚗', osm: 'highway=tertiary', geoms: ['ligne'], groupe: 'Routes secondaires', trait: { couleur: '#FFFFFF', epaisseur: 4, casing: true }, champsRoute: true },
+  { id: 'rue_residentielle', label: 'Rue de quartier', emoji: '🏘️', osm: 'highway=residential', geoms: ['ligne'], groupe: 'Routes secondaires', trait: { couleur: '#E2E2E2', epaisseur: 4, casing: true }, champsRoute: true },
+  { id: 'piste', label: 'Piste / Route en terre', emoji: '🛤️', osm: 'highway=track', geoms: ['ligne'], groupe: 'Routes secondaires', trait: { couleur: '#996600', epaisseur: 3, tirets: '9 6' }, champsRoute: true },
+  { id: 'voie_ferree', label: 'Voie ferrée', emoji: '🚂', osm: 'railway=rail', geoms: ['ligne'], groupe: 'Voies ferrées', trait: { couleur: '#444444', epaisseur: 4, rail: true } },
+  { id: 'sentier', label: 'Sentier / Chemin piéton', emoji: '🥾', osm: 'highway=path', geoms: ['ligne'], groupe: 'Chemins', trait: { couleur: '#FC7F6F', epaisseur: 3, tirets: '5 6' }, champsRoute: true },
+  { id: 'riviere', label: 'Rivière / Fleuve', emoji: '🌊', osm: 'waterway=river', geoms: ['ligne'], groupe: 'Cours d\'eau', trait: { couleur: '#3D8FD1', epaisseur: 5 }, champEtat: true },
+  { id: 'ruisseau', label: 'Ruisseau / Marigot', emoji: '💧', osm: 'waterway=stream', geoms: ['ligne'], groupe: 'Cours d\'eau', trait: { couleur: '#6FB3E0', epaisseur: 3 }, champEtat: true },
+  { id: 'canal', label: 'Canal', emoji: '〰️', osm: 'waterway=canal', geoms: ['ligne'], groupe: 'Cours d\'eau', trait: { couleur: '#3D8FD1', epaisseur: 3, tirets: '12 6' } },
+  { id: 'caniveau', label: 'Caniveau / Drain', emoji: '🕳️', osm: 'waterway=drain', geoms: ['ligne'], groupe: 'Cours d\'eau', trait: { couleur: '#8FC3E8', epaisseur: 2, tirets: '4 5' } },
+  { id: 'cours_eau_assechement', label: 'Cours d\'eau qui s\'assèche', emoji: '⚠️', osm: 'waterway=stream;intermittent=yes', geoms: ['ligne'], groupe: 'Cours d\'eau', trait: { couleur: '#CB8A3E', epaisseur: 3, tirets: '10 5' }, champsAdmin: true },
+  { id: 'cours_eau_asseche', label: 'Cours d\'eau asséché (à sec)', emoji: '🏜️', osm: 'waterway=stream;intermittent=yes', geoms: ['ligne'], groupe: 'Cours d\'eau', trait: { couleur: '#A9746E', epaisseur: 3, tirets: '4 6' }, champsAdmin: true },
+  { id: 'mur', label: 'Mur', emoji: '🧱', osm: 'barrier=wall', geoms: ['ligne'], groupe: 'Types de barrières', trait: { couleur: '#6E6E6E', epaisseur: 3 } },
+  { id: 'cloture', label: 'Clôture', emoji: '🚧', osm: 'barrier=fence', geoms: ['ligne'], groupe: 'Types de barrières', trait: { couleur: '#8A8A8A', epaisseur: 2, tirets: '2 6' } },
+  { id: 'haie', label: 'Haie', emoji: '🌿', osm: 'barrier=hedge', geoms: ['ligne'], groupe: 'Types de barrières', trait: { couleur: '#6FA857', epaisseur: 3 } },
+  { id: 'ligne_electrique', label: 'Ligne électrique', emoji: '⚡', osm: 'power=line', geoms: ['ligne'], groupe: 'Réseaux de distribution', trait: { couleur: '#8E5BA6', epaisseur: 2, tirets: '12 6' } },
+  { id: 'conduite_eau', label: 'Conduite d\'eau', emoji: '🚿', osm: 'man_made=pipeline', geoms: ['ligne'], groupe: 'Réseaux de distribution', trait: { couleur: '#54788C', epaisseur: 3, tirets: '10 4' } },
+  { id: 'autre_ligne', label: 'Autre élément linéaire', emoji: '📏', osm: '', geoms: ['ligne'], groupe: 'Autre', trait: { couleur: '#E8871E', epaisseur: 4 } },
+  { id: 'champ', label: 'Champ / Zone agricole', emoji: '🌾', osm: 'landuse=farmland', geoms: ['polygone'], groupe: 'Types d\'utilisation des sols', surf: { couleur: '#B5B888', remplissage: '#EEF0D5' } },
+  { id: 'zone_industrielle', label: 'Zone industrielle / Mine', emoji: '🏭', osm: 'landuse=industrial', geoms: ['polygone'], groupe: 'Types d\'utilisation des sols', surf: { couleur: '#B592AE', remplissage: '#EBDBE8' } },
+  { id: 'zone_marche', label: 'Emprise de marché', emoji: '🛒', osm: 'amenity=marketplace', geoms: ['polygone'], groupe: 'Types d\'utilisation des sols', surf: { couleur: '#D89578', remplissage: '#FFD6C8' } },
+  { id: 'cimetiere_z', label: 'Cimetière', emoji: '🪦', osm: 'landuse=cemetery', geoms: ['polygone'], groupe: 'Types d\'utilisation des sols', surf: { couleur: '#7FA286', remplissage: '#AACBAF' } },
+  { id: 'village_zone', label: 'Emprise de village', emoji: '🏡', osm: 'place=village', geoms: ['polygone'], groupe: 'Types d\'utilisation des sols', surf: { couleur: '#C8A24B', remplissage: '#F5E9D3', tirets: '8 5' } },
+  { id: 'batiment', label: 'Bâtiment (général)', emoji: '🏠', osm: 'building=yes', geoms: ['polygone'], groupe: 'Types de bâtiments', surf: { couleur: '#9C8F84', remplissage: '#D9D0C9' } },
+  { id: 'maison', label: 'Maison d\'habitation', emoji: '🏠', osm: 'building=house', geoms: ['polygone'], groupe: 'Types de bâtiments', surf: { couleur: '#B3A597', remplissage: '#E8E0D8' } },
+  { id: 'batiment_ecole', label: 'Bâtiment d\'école', emoji: '🏫', osm: 'building=school', geoms: ['polygone'], groupe: 'Types de bâtiments', surf: { couleur: '#C4A94F', remplissage: '#F2E6C9' } },
+  { id: 'batiment_mosquee', label: 'Mosquée (bâtiment)', emoji: '🕌', osm: 'building=mosque', geoms: ['polygone'], groupe: 'Types de bâtiments', surf: { couleur: '#7FA070', remplissage: '#D8E5D2' } },
+  { id: 'batiment_eglise', label: 'Église (bâtiment)', emoji: '⛪', osm: 'building=church', geoms: ['polygone'], groupe: 'Types de bâtiments', surf: { couleur: '#9C82AC', remplissage: '#E3D7E8' } },
+  { id: 'hangar', label: 'Hangar / Entrepôt', emoji: '🏗️', osm: 'building=warehouse', geoms: ['polygone'], groupe: 'Types de bâtiments', surf: { couleur: '#9A9AAC', remplissage: '#DCDCE3' } },
+  { id: 'plan_eau', label: 'Lac / Plan d\'eau', emoji: '💧', osm: 'natural=water', geoms: ['polygone'], groupe: 'Étendues d\'eau', surf: { couleur: '#6FA8BC', remplissage: '#AAD3DF' }, champEtat: true },
+  { id: 'mare', label: 'Mare / Bassin', emoji: '🐸', osm: 'water=pond', geoms: ['polygone'], groupe: 'Étendues d\'eau', surf: { couleur: '#8CBACB', remplissage: '#C4E2EA' }, champEtat: true },
+  { id: 'zone_inondable', label: 'Marécage / Zone inondable', emoji: '🌧️', osm: 'natural=wetland', geoms: ['polygone'], groupe: 'Étendues d\'eau', surf: { couleur: '#7FA8C9', remplissage: '#D6E9DC', tirets: '6 5' }, champEtat: true },
+  { id: 'foret', label: 'Forêt', emoji: '🌲', osm: 'natural=wood', geoms: ['polygone'], groupe: 'Éléments naturels', surf: { couleur: '#7FA870', remplissage: '#ADD19E' }, champEtat: true },
+  { id: 'savane', label: 'Savane / Prairie', emoji: '🌿', osm: 'natural=grassland', geoms: ['polygone'], groupe: 'Éléments naturels', surf: { couleur: '#9CBF7E', remplissage: '#CDEBB0' }, champEtat: true },
+  { id: 'sable', label: 'Sable / Plage', emoji: '🏖️', osm: 'natural=sand', geoms: ['polygone'], groupe: 'Éléments naturels', surf: { couleur: '#D9C173', remplissage: '#FFF1BA' } },
+  { id: 'rocher', label: 'Rocher / Affleurement', emoji: '🪨', osm: 'natural=bare_rock', geoms: ['polygone'], groupe: 'Éléments naturels', surf: { couleur: '#A5A29C', remplissage: '#D8D6D2' } },
+  { id: 'parc_z', label: 'Parc / Espace vert', emoji: '🌳', osm: 'leisure=park', geoms: ['polygone'], groupe: 'Équipements & lieux', surf: { couleur: '#8CC793', remplissage: '#C8FACC' } },
+  { id: 'terrain_sport_z', label: 'Terrain de sport', emoji: '⚽', osm: 'leisure=pitch', geoms: ['polygone'], groupe: 'Équipements & lieux', surf: { couleur: '#6FB398', remplissage: '#AAE0CB' } },
+  { id: 'stade_z', label: 'Stade', emoji: '🏟️', osm: 'leisure=stadium', geoms: ['polygone'], groupe: 'Équipements & lieux', surf: { couleur: '#84BC8B', remplissage: '#DFFCE2' } },
+  { id: 'hopital_z', label: 'Centre hospitalier', emoji: '🏥', osm: 'amenity=hospital', geoms: ['polygone'], groupe: 'Équipements & lieux', surf: { couleur: '#D08888', remplissage: '#FFDDDD' } },
+  { id: 'lieu_culte_z', label: 'Lieu de culte (enceinte)', emoji: '🕌', osm: 'amenity=place_of_worship', geoms: ['polygone'], groupe: 'Équipements & lieux', surf: { couleur: '#A98CC7', remplissage: '#E5DAF0' } },
+  { id: 'ecole_enceinte', label: 'Enceinte d\'école', emoji: '🏫', osm: 'amenity=school', geoms: ['polygone'], groupe: 'Équipements & lieux', surf: { couleur: '#C9C46B', remplissage: '#FFFFE5' } },
+  { id: 'zone_brulee', label: 'Zone brûlée (feu de brousse)', emoji: '🔥', osm: '', geoms: ['polygone'], groupe: 'Alertes environnementales', surf: { couleur: '#8E3B2F', remplissage: '#E0A992', tirets: '6 4' }, champsAdmin: true },
+  { id: 'defrichement', label: 'Défrichement / coupe de forêt', emoji: '🪓', osm: '', geoms: ['polygone'], groupe: 'Alertes environnementales', surf: { couleur: '#A05A2C', remplissage: '#EBD2B8', tirets: '6 4' }, champsAdmin: true },
+  { id: 'autre_zone', label: 'Autre zone', emoji: '⬠', osm: '', geoms: ['polygone'], groupe: 'Autre', surf: { couleur: '#E8871E', remplissage: '#FBE3C8' } },
+];
+function catInfo(id) { return TYPES.find(t => t.id === id) || { label: String(id), emoji: '📍' }; }
+
+// Neutralise le HTML dans les contenus saisis par les utilisateurs (anti-XSS)
+function echap(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Les photos sont stockées à côté de l'API : chemin relatif → adresse complète
+function urlPhoto(p) {
+  return /^(data:|https?:)/.test(p) ? p : new URL(p, new URL(API, location.href)).href;
+}
+
+function coordsLeaflet(geo) {
+  if (geo.type === 'Point')      return [[geo.coordinates[1], geo.coordinates[0]]];
+  if (geo.type === 'LineString') return geo.coordinates.map(p => [p[1], p[0]]);
+  return geo.coordinates[0].map(p => [p[1], p[0]]);
+}
+
+// ---------- Connexion ----------
+document.getElementById('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  token = document.getElementById('inpToken').value.trim();
+  try {
+    const r = await fetch(API + '?action=pending&statut=en_attente&token=' + encodeURIComponent(token));
+    const d = await r.json();
+    if (!d.ok) throw new Error();
+    document.getElementById('login').style.display = 'none';
+    document.getElementById('admin').classList.add('actif');
+    initCarte();
+    afficher(d.contributions);
+    majLiensExport();
+  } catch (err) {
+    document.getElementById('loginErr').style.display = 'block';
+  }
+});
+
+function initCarte() {
+  if (carte) return;
+  carte = L.map('map').setView([11.3182, -12.2833], 13); // Labé
+  const fondPlan = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© contributeurs <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  });
+  const fondSatellite = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, maxNativeZoom: 17,
+    attribution: '© Esri — Source : Esri, Maxar, Earthstar Geographics, et la communauté des utilisateurs SIG'
+  });
+  // Fond Google hybride — accès non officiel ; Esri reste en secours.
+  const fondGoogle = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+    maxZoom: 21, attribution: '© Google'
+  });
+  fondGoogle.addTo(carte);
+  const controleFonds = L.control.layers(
+    { '🛰️ Google Satellite': fondGoogle, '🛰️ Satellite (Esri)': fondSatellite, '🗺️ Plan (OSM)': fondPlan },
+    null, { position: 'topleft', collapsed: window.innerWidth < 800 }
+  ).addTo(carte);
+
+  // ================= Google Satellite (officiel, facultatif) =================
+  // Pour activer : créez une clé API sur https://console.cloud.google.com
+  // (projet → activer "Map Tiles API" → Identifiants → clé API),
+  // puis collez-la entre les guillemets ci-dessous.
+  const GOOGLE_MAPS_KEY = '';
+  
+  async function ajouterGoogleSatellite(carteRef, controleRef) {
+    if (!GOOGLE_MAPS_KEY) return;
+    try {
+      const r = await fetch('https://tile.googleapis.com/v1/createSession?key=' + GOOGLE_MAPS_KEY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mapType: 'satellite', language: 'fr-FR', region: 'GN' })
+      });
+      const d = await r.json();
+      if (!d.session) return;
+      const gsat = L.tileLayer(
+        'https://tile.googleapis.com/v1/2dtiles/{z}/{x}/{y}?session=' + d.session + '&key=' + GOOGLE_MAPS_KEY, {
+        maxZoom: 21, attribution: '© Google'
+      });
+      controleRef.addBaseLayer(gsat, '🛰️ Google (API officielle)');
+    } catch (e) { /* clé absente ou invalide : on reste sur Esri/OSM */ }
+  }
+  
+  ajouterGoogleSatellite(carte, controleFonds);
+
+  // ================= Recherche d'adresse (Nominatim / OSM) =================
+  const SearchControl = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function () {
+      const div = L.DomUtil.create('div', 'recherche-box');
+      div.innerHTML = `
+        <form id="formRecherche">
+          <input id="inpRecherche" type="text" placeholder="Rechercher un lieu en Guinée…" autocomplete="off">
+          <button type="submit" title="Rechercher">🔍</button>
+        </form>
+        <div id="resRecherche"></div>`;
+      L.DomEvent.disableClickPropagation(div);
+      L.DomEvent.disableScrollPropagation(div);
+      return div;
+    }
+  });
+  carte.addControl(new SearchControl());
+  
+  let marqueurRecherche = null;
+  // ----- Suggestions d'adresses pendant la saisie (Photon / OSM, filtré Guinée) -----
+  let suggTimer = null, suggSeq = 0;
+  document.getElementById('inpRecherche').addEventListener('input', function () {
+    const q = this.value.trim();
+    clearTimeout(suggTimer);
+    const box = document.getElementById('resRecherche');
+    if (q.length < 3) { box.style.display = 'none'; return; }
+    suggTimer = setTimeout(async () => {
+      const seq = ++suggSeq;
+      try {
+        const r = await fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(q)
+          + '&lang=fr&limit=6&lat=11.3182&lon=-12.2833');
+        const d = await r.json();
+        if (seq !== suggSeq) return; // une frappe plus récente a relancé la recherche
+        const res = (d.features || []).filter(f => (f.properties.countrycode || '') === 'GN');
+        if (!res.length) { box.style.display = 'none'; return; }
+        box.innerHTML = '';
+        for (const f of res) {
+          const p = f.properties;
+          const libelle = [p.name, p.district || p.city || p.county, p.state]
+            .filter(Boolean).join(', ');
+          const div = document.createElement('div');
+          div.className = 'res';
+          div.textContent = libelle || q;
+          div.onclick = () => {
+            box.style.display = 'none';
+            document.getElementById('inpRecherche').value = libelle;
+            document.getElementById('inpRecherche').blur();
+            const lon = f.geometry.coordinates[0], lat = f.geometry.coordinates[1];
+            if (marqueurRecherche) carte.removeLayer(marqueurRecherche);
+            marqueurRecherche = L.marker([lat, lon]).addTo(carte).bindPopup(libelle).openPopup();
+            if (p.extent) {
+              carte.fitBounds([[p.extent[1], p.extent[0]], [p.extent[3], p.extent[2]]], { maxZoom: 17 });
+            } else {
+              carte.setView([lat, lon], 16);
+            }
+          };
+          box.appendChild(div);
+        }
+        const credit = document.createElement('div');
+        credit.className = 'credit';
+        credit.textContent = 'Suggestions © Photon / OpenStreetMap — Entrée pour plus de résultats';
+        box.appendChild(credit);
+        box.style.display = 'block';
+      } catch (e) { /* réseau indisponible : la recherche avec Entrée reste possible */ }
+    }, 450);
+  });
+  
+  document.getElementById('formRecherche').addEventListener('submit', async e => {
+    e.preventDefault();
+    document.getElementById('inpRecherche').blur();
+    const q = document.getElementById('inpRecherche').value.trim();
+    const box = document.getElementById('resRecherche');
+    if (!q) return;
+    box.style.display = 'block';
+    box.innerHTML = '<div class="res">Recherche…</div>';
+    try {
+      const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2'
+        + '&q=' + encodeURIComponent(q)
+        + '&countrycodes=gn&limit=5&accept-language=fr';
+      const r = await fetch(url);
+      const res = await r.json();
+      if (!res.length) {
+        box.innerHTML = '<div class="res">Aucun résultat en Guinée pour « ' + q + ' ».</div>'
+          + '<div class="credit">Recherche © Nominatim / OpenStreetMap</div>';
+        return;
+      }
+      box.innerHTML = '';
+      for (const lieu of res) {
+        const d = document.createElement('div');
+        d.className = 'res';
+        d.textContent = lieu.display_name;
+        d.onclick = () => {
+          box.style.display = 'none';
+          const lat = parseFloat(lieu.lat), lon = parseFloat(lieu.lon);
+          if (marqueurRecherche) carte.removeLayer(marqueurRecherche);
+          marqueurRecherche = L.marker([lat, lon]).addTo(carte)
+            .bindPopup(lieu.display_name).openPopup();
+          if (lieu.boundingbox) {
+            const b = lieu.boundingbox.map(Number);
+            carte.fitBounds([[b[0], b[2]], [b[1], b[3]]], { maxZoom: 17 });
+          } else {
+            carte.setView([lat, lon], 16);
+          }
+        };
+        box.appendChild(d);
+      }
+      const credit = document.createElement('div');
+      credit.className = 'credit';
+      credit.textContent = 'Recherche © Nominatim / OpenStreetMap';
+      box.appendChild(credit);
+    } catch (err) {
+      box.innerHTML = '<div class="res">Recherche impossible (pas de réseau ?).</div>';
+    }
+  });
+  
+  couche = L.layerGroup().addTo(carte);
+  setTimeout(() => carte.invalidateSize(), 100);
+}
+
+function majLiensExport() {
+  document.getElementById('lienExportValide').href =
+    API + '?action=export&statut=valide&token=' + encodeURIComponent(token);
+  document.getElementById('lienExportAttente').href =
+    API + '?action=export&statut=en_attente&token=' + encodeURIComponent(token);
+  document.getElementById('expPts').href =
+    API + '?action=export&statut=valide&couche=ponctuels&token=' + encodeURIComponent(token);
+  document.getElementById('expLin').href =
+    API + '?action=export&statut=valide&couche=lineaires&token=' + encodeURIComponent(token);
+  document.getElementById('expSrf').href =
+    API + '?action=export&statut=valide&couche=surfaciques&token=' + encodeURIComponent(token);
+}
+
+// ---------- Affichage ----------
+function afficher(liste) {
+  pending = liste;
+  couche.clearLayers();
+  const cont = document.getElementById('pendingListe');
+  document.getElementById('nbFiches').textContent = pending.length;
+
+  if (pending.length === 0) {
+    cont.innerHTML = filtreStatut === 'en_attente'
+      ? '<div id="vide"><div style="font-size:40px">🎉</div><b>Rien en attente</b><br>Toutes les contributions ont été traitées.</div>'
+      : '<div id="vide"><div style="font-size:40px">🗂️</div>Aucune contribution dans cette catégorie.</div>';
+    return;
+  }
+  cont.innerHTML = '';
+  const bounds = [];
+
+  for (const c of pending) {
+    const pts = coordsLeaflet(c.geom_geojson);
+    bounds.push(...pts);
+    const cat = catInfo(c.categorie);
+    const emoji = cat.emoji;
+
+    const couleurStatut = { en_attente: '#E8871E', valide: '#009460',
+                            rejete: '#c0392b', importe_osm: '#1d4f91' }[c.statut] || '#E8871E';
+    let objet;
+    if (c.geom_type === 'point') {
+      objet = L.marker(pts[0], { icon: L.divIcon({
+        className: 'pin-wrap',
+        html: `<div class="pin pin-${echap(c.statut)}"><span>${emoji}</span></div>`,
+        iconSize: [36, 36], iconAnchor: [18, 44], popupAnchor: [0, -40],
+      }) }).addTo(couche);
+    } else if (c.geom_type === 'ligne') {
+      objet = L.polyline(pts, { color: couleurStatut, weight: 5 }).addTo(couche);
+    } else {
+      objet = L.polygon(pts, { color: couleurStatut, weight: 3, fillOpacity: .25 }).addTo(couche);
+    }
+    objet.bindPopup(`<div class="pp-titre">${emoji} ${echap(c.nom) || echap(cat.label)}</div>
+      <div class="pp-type">${echap(cat.label)}</div>${c.notes ? '<div class="pp-note">« ' + echap(c.notes) + ' »</div>' : ''}`,
+      { className: 'pp-popup', maxWidth: 260 });
+
+    const at = c.attributs || {};
+    const auteur = c.c_prenom ? c.c_prenom + ' ' + (c.c_nom || '') : (c.contributeur || '');
+    const date = new Date(String(c.created_at).replace(' ', 'T'));
+    const infos = [
+      auteur && ['👤', echap(auteur)],
+      c.c_tel && ['📞', echap(c.c_tel)],
+      c.c_email && ['✉️', echap(c.c_email)],
+      !isNaN(date) && ['📅', date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })],
+      at.sous_prefecture && ['📍', (at.quartier ? echap(at.quartier) + ' — ' : '') + echap(at.sous_prefecture)
+        + (at.prefecture ? ' (' + echap(at.prefecture) + ')' : '')],
+      at.praticabilite && ['🚦', echap(LIBELLES_PRAT_A[at.praticabilite] || at.praticabilite)],
+      at.revetement && ['🛤️', echap(LIBELLES_REV_A[at.revetement] || at.revetement)],
+    ].filter(Boolean);
+
+    const div = document.createElement('div');
+    div.className = 'fiche st-' + c.statut;
+    div.innerHTML = `
+      <div class="fiche-tete">
+        <span class="fiche-ico">${emoji}</span>
+        <div class="fiche-noms">
+          <div class="titre">${echap(c.nom) || echap(cat.label)}</div>
+          <div class="fiche-type">${{point:'Lieu',ligne:'Linéaire',polygone:'Surface'}[c.geom_type] || ''} · ${echap(cat.label)}</div>
+        </div>
+        <span class="badge-statut ${echap(c.statut)}">${
+          {en_attente:'En attente',valide:'Validée',rejete:'Rejetée',importe_osm:'Dans OSM'}[c.statut] || echap(c.statut)}</span>
+      </div>
+      ${c.photo ? `<a class="fiche-photo" href="${echap(urlPhoto(c.photo))}" target="_blank" rel="noopener"><img src="${echap(urlPhoto(c.photo))}" alt="Photo"></a>` : ''}
+      ${c.notes ? `<div class="fiche-note">« ${echap(c.notes)} »</div>` : ''}
+      <div class="fiche-infos">${infos.map(([ico, txt]) =>
+        `<div class="fiche-ligne"><span>${ico}</span><span>${txt}</span></div>`).join('')}</div>
+      <div class="comms" id="comms-${echap(c.id)}">
+        <button class="btn-charger-comms" data-id="${echap(c.id)}">💬 Voir les commentaires</button>
+      </div>
+      <div class="actions">
+        <button class="b-voir">👁 Voir</button>
+        ${c.statut !== 'valide' ? '<button class="b-ok">✓ Valider</button>' : ''}
+        ${c.statut !== 'rejete' ? '<button class="b-non">✕ Rejeter</button>' : ''}
+        ${c.statut !== 'en_attente' ? '<button class="b-att">↺ En attente</button>' : ''}
+      </div>`;
+    div.querySelector('.titre').onclick =
+    div.querySelector('.b-voir').onclick = () => {
+      carte.setView(pts[Math.floor(pts.length / 2)], 17);
+      objet.openPopup();
+    };
+    const bOk = div.querySelector('.b-ok');
+    if (bOk) bOk.onclick = () => changerStatut(c, 'valide');
+    const bNon = div.querySelector('.b-non');
+    if (bNon) bNon.onclick = () => changerStatut(c, 'rejete');
+    const bAtt = div.querySelector('.b-att');
+    if (bAtt) bAtt.onclick = () => changerStatut(c, 'en_attente');
+    cont.appendChild(div);
+  }
+  if (bounds.length) carte.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+}
+
+async function changerStatut(c, statut) {
+  const r = await fetch(API + '?action=setstatut&token=' + encodeURIComponent(token), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: c.id, geom_type: c.geom_type, statut }),
+  });
+  const d = await r.json();
+  if (d.ok) rafraichir();
+}
+
+let filtreStatut = 'en_attente';
+const TITRES_FILTRE = {
+  en_attente: 'En attente de validation', valide: 'Contributions validées',
+  rejete: 'Contributions rejetées', importe_osm: 'Importées dans OSM', tous: 'Toutes les contributions',
+};
+
+const LIBELLES_PRAT_A = {
+  pieds: '🚶 Pieds seulement', pieds_moto: '🚶🏍️ Pieds et moto',
+  pieds_moto_voiture: '🚶🏍️🚗 Pieds, moto et voiture', tous: '🚶🏍️🚗🚛 Tous véhicules'
+};
+const LIBELLES_REV_A = {
+  bitume: '🛣️ Bitumée', beton: '🏗️ Bétonnée',
+  bombee: '🪨 Bombée (latérite)', naturel: '🌿 État naturel'
+};
+async function rafraichir() {
+  const r = await fetch(API + '?action=pending&statut=' + filtreStatut
+    + '&token=' + encodeURIComponent(token));
+  const d = await r.json();
+  if (d.ok) afficher(d.contributions);
+}
+document.getElementById('btnRafraichir').onclick = rafraichir;
+
+document.querySelectorAll('.filtre').forEach(b => {
+  b.onclick = () => {
+    filtreStatut = b.dataset.statut;
+    document.querySelectorAll('.filtre').forEach(x => x.classList.remove('actif'));
+    b.classList.add('actif');
+    const liste = document.getElementById('pendingListe');
+    const dash = document.getElementById('dashboard');
+    if (filtreStatut === 'stats') {
+      document.getElementById('titrePanneau').textContent = 'Tableau de bord des alertes';
+      document.getElementById('nbFiches').textContent = '';
+      liste.style.display = 'none';
+      dash.style.display = 'block';
+      chargerStats();
+    } else {
+      liste.style.display = 'block';
+      dash.style.display = 'none';
+      document.getElementById('titrePanneau').textContent = TITRES_FILTRE[filtreStatut];
+      rafraichir();
+    }
+  };
+});
+
+// ----- Tableau de bord : alertes par sous-préfecture + états -----
+const TYPES_ALERTE = {
+  zone_brulee: '🔥', defrichement: '🪓', source_tarie: '🚱',
+  source_menacee: '⚠️', cours_eau_asseche: '🏜️', cours_eau_assechement: '📉',
+};
+async function chargerStats() {
+  const dash = document.getElementById('dashboard');
+  dash.innerHTML = '<div id="vide">Calcul en cours…</div>';
+  const r = await fetch(API + '?action=stats&token=' + encodeURIComponent(token));
+  const d = await r.json();
+  if (!d.ok) { dash.innerHTML = '<div id="vide">Erreur de chargement.</div>'; return; }
+
+  // Croisement sous-préfecture × type d'alerte (hors rejetées)
+  const pivot = {};
+  for (const l of d.lignes) {
+    if (!(l.categorie in TYPES_ALERTE) || l.statut === 'rejete') continue;
+    pivot[l.sous_prefecture] = pivot[l.sous_prefecture] || {};
+    pivot[l.sous_prefecture][l.categorie] =
+      (pivot[l.sous_prefecture][l.categorie] || 0) + Number(l.n);
+  }
+  const sps = Object.keys(pivot).sort((a, b) => {
+    const ta = Object.values(pivot[a]).reduce((s, x) => s + x, 0);
+    const tb = Object.values(pivot[b]).reduce((s, x) => s + x, 0);
+    return tb - ta;
+  });
+
+  dernierExport = { pivot, cols: Object.keys(TYPES_ALERTE) };
+  let htmlDash = '<h3>🚨 Alertes environnementales par sous-préfecture</h3>'
+    + '<button id="btnCsv">⬇️ Exporter ce tableau en CSV</button>';
+  if (!sps.length) {
+    htmlDash += '<div style="color:#999;font-size:13px">Aucune alerte enregistrée pour l\u2019instant.</div>';
+  } else {
+    const cols = Object.keys(TYPES_ALERTE);
+    htmlDash += '<table><tr><th>Sous-préfecture</th>'
+      + cols.map(c => '<th title="' + catInfo(c).label + '">' + TYPES_ALERTE[c] + '</th>').join('')
+      + '<th>Total</th></tr>';
+    const totaux = {};
+    for (const sp of sps) {
+      let tot = 0;
+      htmlDash += '<tr><td>' + echap(sp) + '</td>';
+      for (const c of cols) {
+        const n = pivot[sp][c] || 0;
+        tot += n;
+        totaux[c] = (totaux[c] || 0) + n;
+        htmlDash += '<td>' + (n || '·') + '</td>';
+      }
+      htmlDash += '<td><b>' + tot + '</b></td></tr>';
+    }
+    const grandTotal = Object.values(totaux).reduce((s, x) => s + x, 0);
+    htmlDash += '<tr class="total"><td>TOTAL</td>'
+      + cols.map(c => '<td>' + (totaux[c] || 0) + '</td>').join('')
+      + '<td>' + grandTotal + '</td></tr></table>';
+    htmlDash += '<div style="font-size:11px;color:#888;margin-top:6px">🔥 Feux · 🪓 Défrichements · 🚱 Sources taries · ⚠️ Sources menacées · 🏜️ Cours d\u2019eau à sec · 📉 En assèchement</div>';
+  }
+
+  // États des éléments naturels
+  htmlDash += '<h3>🌿 État des éléments naturels renseignés</h3>';
+  const eNoms = { bon: '🟢 Bon', menace: '🟠 Menacé', degrade: '🔴 Dégradé' };
+  if (!d.etats.length) {
+    htmlDash += '<div style="color:#999;font-size:13px">Aucun état renseigné pour l\u2019instant.</div>';
+  } else {
+    htmlDash += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    for (const e of d.etats) {
+      htmlDash += '<span class="jauge ' + echap(e.etat) + '">' + eNoms[e.etat] + ' : ' + e.n + '</span>';
+    }
+    htmlDash += '</div>';
+  }
+  dash.innerHTML = htmlDash;
+  const btnCsv = document.getElementById('btnCsv');
+  if (btnCsv) btnCsv.onclick = exporterCsv;
+}
+
+// ----- Commentaires en modération -----
+document.addEventListener('click', async function(e) {
+  const btn = e.target.closest('.btn-charger-comms');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const zone = document.getElementById('comms-' + id);
+  zone.innerHTML = '<span style="color:#aaa;font-size:12px">Chargement…</span>';
+  try {
+    const r = await fetch(API + '?action=commentaires&id=' + encodeURIComponent(id)
+      + '&token=' + encodeURIComponent(token));
+    const d = await r.json();
+    if (!d.commentaires.length) {
+      zone.innerHTML = '<span style="color:#aaa;font-size:12px">Aucun commentaire.</span>'; return;
+    }
+    zone.innerHTML = d.commentaires.map(c =>
+      `<div class="comm-admin">
+        <div class="comm-admin-tete">
+          <span class="comm-admin-aut">${echap(c.auteur)}</span>
+          <span style="color:#aaa;font-size:11px">${echap(c.date)}</span>
+          <button class="btn-del-comm" data-commid="${echap(c.id)}" data-zone="comms-${echap(id)}"
+            title="Supprimer ce commentaire">🗑</button>
+        </div>
+        <div class="comm-admin-txt">${echap(c.texte)}</div>
+      </div>`).join('');
+  } catch(e) { zone.innerHTML = '<span style="color:red;font-size:12px">Erreur.</span>'; }
+});
+document.addEventListener('click', async function(e) {
+  const btn = e.target.closest('.btn-del-comm');
+  if (!btn) return;
+  if (!confirm('Supprimer ce commentaire ?')) return;
+  const r = await fetch(API + '?action=delete_commentaire&token=' + encodeURIComponent(token), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: btn.dataset.commid })
+  });
+  const d = await r.json();
+  if (d.ok) {
+    btn.closest('.comm-admin').remove();
+    toast && toast('Commentaire supprimé.');
+  }
+});
+
+// Export CSV du croisement alertes × sous-préfectures (séparateur ; pour Excel FR)
+let dernierExport = null;
+function exporterCsv() {
+  if (!dernierExport) return;
+  const { pivot, cols } = dernierExport;
+  const lignes = ['Sous-préfecture;' + cols.map(c => catInfo(c).label).join(';') + ';Total'];
+  for (const sp of Object.keys(pivot).sort()) {
+    let tot = 0;
+    const vals = cols.map(c => { const n = pivot[sp][c] || 0; tot += n; return n; });
+    lignes.push('"' + sp.replace(/"/g, '""') + '";' + vals.join(';') + ';' + tot);
+  }
+  // BOM UTF-8 pour que les accents s'affichent bien dans Excel
+  const blob = new Blob(['\ufeff' + lignes.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'alertes_par_sous_prefecture.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// La liste se met à jour automatiquement toutes les 60 secondes
+setInterval(() => { if (token && navigator.onLine) rafraichir(); }, 60000);
+</script>
+<div style="position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:99999;background:#FF9500;color:#fff;font:600 11px/1 sans-serif;padding:4px 10px;border-radius:0 0 6px 6px;pointer-events:none">VERSION DÉMO</div>
+</body>
+</html>
