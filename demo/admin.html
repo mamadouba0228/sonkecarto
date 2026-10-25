@@ -140,6 +140,35 @@
   .btn.secondaire { background: #EDF1F6; color: #333; }
   .btn.secondaire:hover { background: #DDE5EF; }
 
+  /* Envoi vers OpenStreetMap */
+  #btnOsm { border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.14); color: #fff; border-radius: 20px;
+    padding: 6px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  #btnOsm:hover { background: rgba(255,255,255,.24); }
+  #btnOsm.connecte { background: #fff; color: var(--vert-fonce); border-color: #fff; }
+  .b-osm { background: var(--st-osm-bg); color: var(--st-osm); }
+  .b-osm:hover { background: #E2D8F5; }
+  #osmModal { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; padding: 16px; }
+  #osmBoite { background: #fff; border-radius: 16px; width: 460px; max-width: 100%; max-height: 90vh; overflow-y: auto; padding: 20px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+  #osmBoite h2 { font-size: 17px; margin-bottom: 12px; }
+  .osm-titre { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+  .osm-sous { font-size: 12px; font-weight: 700; color: #667085; text-transform: uppercase; letter-spacing: .04em; margin: 14px 0 6px; }
+  .osm-tags { width: 100%; border-collapse: collapse; font: 12.5px/1.4 ui-monospace, Consolas, monospace; }
+  .osm-tags td { padding: 4px 8px; border-bottom: 1px solid #EDF0F4; }
+  .osm-tags td:first-child { color: #667085; width: 40%; }
+  .osm-alerte { border-radius: 10px; padding: 9px 12px; font-size: 13px; line-height: 1.45; margin: 8px 0; }
+  .osm-alerte.err  { background: var(--st-rejete-bg); color: var(--st-rejete); }
+  .osm-alerte.info { background: var(--st-osm-bg); color: var(--st-osm); }
+  .osm-alerte.ok   { background: var(--st-valide-bg); color: var(--st-valide); }
+  .osm-alerte a { color: inherit; font-weight: 700; }
+  .osm-doublon { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid #EDF0F4; }
+  .osm-doublon a { color: var(--vert); font-weight: 600; }
+  .osm-confirme { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin-top: 10px; cursor: pointer; line-height: 1.4; }
+  .osm-confirme input { margin-top: 3px; }
+  .osm-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .osm-actions .btn { flex: 1; font-family: inherit; }
+  .osm-actions .btn:disabled { opacity: .45; cursor: not-allowed; }
+  @media (max-width: 800px) { #btnOsm { padding: 5px 9px; font-size: 11.5px; } }
+
   /* Marqueurs et fiches sur la carte */
   .pin-wrap { background: none; border: none; }
   .pin {
@@ -200,6 +229,7 @@
 
 <div id="appbar">
   <h1>Guinée Carto <span class="tag">Modération</span></h1>
+  <button id="btnOsm" type="button" title="Compte OpenStreetMap utilisé pour l'envoi">🌍 Se connecter à OSM</button>
   <a href="index.html">← Retour à la carte publique</a>
 </div>
 
@@ -238,6 +268,18 @@
       <a class="btn secondaire" id="lienExportAttente" href="#">⬇️ Exporter les en-attente (GeoJSON)</a>
     </footer>
   </aside>
+</div>
+
+<!-- Fenêtre de vérification avant envoi vers OpenStreetMap -->
+<div id="osmModal">
+  <div id="osmBoite">
+    <h2>🌍 Envoyer vers OpenStreetMap</h2>
+    <div id="osmCorps"></div>
+    <div class="osm-actions">
+      <button type="button" class="btn secondaire" id="osmFermer">Fermer</button>
+      <button type="button" class="btn primaire" id="osmEnvoyer" disabled>🌍 Envoyer</button>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -400,9 +442,10 @@ function initCarte() {
   const fondGoogle = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
     maxZoom: 21, attribution: '© Google'
   });
-  fondGoogle.addTo(carte);
+  // Esri par défaut : seule imagerie dont le tracé est autorisé dans OpenStreetMap.
+  fondSatellite.addTo(carte);
   const controleFonds = L.control.layers(
-    { '🛰️ Google Satellite': fondGoogle, '🛰️ Satellite (Esri)': fondSatellite, '🗺️ Plan (OSM)': fondPlan },
+    { '🛰️ Satellite (Esri)': fondSatellite, '🛰️ Google Satellite': fondGoogle, '🗺️ Plan (OSM)': fondPlan },
     null, { position: 'topleft', collapsed: window.innerWidth < 800 }
   ).addTo(carte);
 
@@ -616,6 +659,7 @@ function afficher(liste) {
         + (at.prefecture ? ' (' + echap(at.prefecture) + ')' : '')],
       at.praticabilite && ['🚦', echap(LIBELLES_PRAT_A[at.praticabilite] || at.praticabilite)],
       at.revetement && ['🛤️', echap(LIBELLES_REV_A[at.revetement] || at.revetement)],
+      ['🛰️', 'Tracé sur : ' + ({ esri: 'Esri', google: 'Google Satellite ⚠️', osm: 'Plan OSM' }[at.fond] || 'fond inconnu')],
     ].filter(Boolean);
 
     const div = document.createElement('div');
@@ -642,6 +686,7 @@ function afficher(liste) {
         ${c.statut !== 'valide' ? '<button class="b-ok">✓ Valider</button>' : ''}
         ${c.statut !== 'rejete' ? '<button class="b-non">✕ Rejeter</button>' : ''}
         ${c.statut !== 'en_attente' ? '<button class="b-att">↺ En attente</button>' : ''}
+        ${c.statut === 'valide' ? '<button class="b-osm">🌍 Envoyer vers OSM</button>' : ''}
       </div>`;
     div.querySelector('.titre').onclick =
     div.querySelector('.b-voir').onclick = () => {
@@ -654,6 +699,8 @@ function afficher(liste) {
     if (bNon) bNon.onclick = () => changerStatut(c, 'rejete');
     const bAtt = div.querySelector('.b-att');
     if (bAtt) bAtt.onclick = () => changerStatut(c, 'en_attente');
+    const bOsm = div.querySelector('.b-osm');
+    if (bOsm) bOsm.onclick = () => ouvrirEnvoiOsm(c);
     cont.appendChild(div);
   }
   if (bounds.length) carte.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
@@ -848,6 +895,305 @@ function exporterCsv() {
 
 // La liste se met à jour automatiquement toutes les 60 secondes
 setInterval(() => { if (token && navigator.onLine) rafraichir(); }, 60000);
+</script>
+
+<script>
+// ================= Envoi vers OpenStreetMap =================
+// Mise en service :
+//  1) Sur OSM_SERVEUR, menu « Mes paramètres → Applications OAuth 2 → Enregistrer une nouvelle application » :
+//     application confidentielle : NON ; permissions : « Lire les préférences » et « Modifier la carte » ;
+//     URL de redirection : l'adresse exacte de cette page (une par ligne si plusieurs hébergements).
+//  2) Collez le « Client ID » obtenu dans OSM_CLIENT_ID (il est public, ce n'est pas un secret).
+// Le serveur de TEST est utilisé par défaut : rien n'arrive dans la vraie carte tant que
+// OSM_SERVEUR n'est pas remplacé par 'https://www.openstreetmap.org'.
+const OSM_SERVEUR = 'https://master.apis.dev.openstreetmap.org';
+const OSM_CLIENT_ID = '';
+const OSM_TEST = OSM_SERVEUR !== 'https://www.openstreetmap.org';
+const OSM_API = OSM_TEST ? OSM_SERVEUR : 'https://api.openstreetmap.org';
+const OVERPASS = 'https://overpass-api.de/api/interpreter';
+const REDIRECTION_OSM = location.origin + location.pathname;
+
+// Retour de la fenêtre de connexion OSM : on transmet le code à la page admin, puis on ferme.
+(function () {
+  const p = new URLSearchParams(location.search);
+  if (window.opener && p.has('state') && (p.has('code') || p.has('error'))) {
+    window.opener.postMessage({ osmAuth: true, code: p.get('code'), state: p.get('state'), error: p.get('error') },
+      location.origin);
+    window.close();
+  }
+})();
+
+let osmJeton = localStorage.getItem('gc_osm_jeton') || '';
+let osmUtilisateur = '';
+const btnOsm = document.getElementById('btnOsm');
+
+function base64url(octets) {
+  return btoa(String.fromCharCode(...new Uint8Array(octets)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// Connexion OAuth2 avec PKCE dans une fenêtre séparée (la session admin reste ouverte)
+async function connexionOsm() {
+  if (!OSM_CLIENT_ID) {
+    alert('Envoi vers OSM pas encore configuré : renseignez OSM_CLIENT_ID dans admin.html.');
+    return;
+  }
+  const verificateur = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  const etat = base64url(crypto.getRandomValues(new Uint8Array(16)));
+  const defi = base64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verificateur)));
+  const url = OSM_SERVEUR + '/oauth2/authorize?' + new URLSearchParams({
+    response_type: 'code', client_id: OSM_CLIENT_ID, redirect_uri: REDIRECTION_OSM,
+    scope: 'read_prefs write_api', code_challenge: defi, code_challenge_method: 'S256', state: etat,
+  });
+  if (!window.open(url, 'osm_auth', 'width=600,height=720')) {
+    alert('Autorisez les fenêtres pop-up pour cette page, puis réessayez.');
+    return;
+  }
+  const ecoute = async e => {
+    if (e.origin !== location.origin || !e.data || !e.data.osmAuth) return;
+    window.removeEventListener('message', ecoute);
+    if (e.data.error || e.data.state !== etat) { alert('Connexion OSM annulée ou refusée.'); return; }
+    try {
+      const r = await fetch(OSM_SERVEUR + '/oauth2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code', code: e.data.code, redirect_uri: REDIRECTION_OSM,
+          client_id: OSM_CLIENT_ID, code_verifier: verificateur,
+        }),
+      });
+      const d = await r.json();
+      if (!d.access_token) throw new Error();
+      osmJeton = d.access_token;
+      localStorage.setItem('gc_osm_jeton', osmJeton);
+      await majCompteOsm();
+    } catch (err) {
+      alert('Impossible d’obtenir l’autorisation d’OpenStreetMap.');
+    }
+  };
+  window.addEventListener('message', ecoute);
+}
+
+function deconnexionOsm() {
+  osmJeton = ''; osmUtilisateur = '';
+  localStorage.removeItem('gc_osm_jeton');
+  majCompteOsm();
+}
+
+async function majCompteOsm() {
+  if (!osmJeton) {
+    btnOsm.textContent = '🌍 Se connecter à OSM';
+    btnOsm.classList.remove('connecte');
+    return;
+  }
+  try {
+    const r = await fetch(OSM_API + '/api/0.6/user/details.json', { headers: { Authorization: 'Bearer ' + osmJeton } });
+    if (r.status === 401 || r.status === 403) { deconnexionOsm(); return; } // jeton expiré ou révoqué
+    const d = await r.json();
+    osmUtilisateur = d.user.display_name;
+    btnOsm.textContent = '🌍 ' + osmUtilisateur + (OSM_TEST ? ' (test)' : '');
+    btnOsm.classList.add('connecte');
+  } catch (e) { /* réseau indisponible : on garde le jeton */ }
+}
+
+btnOsm.onclick = () => {
+  if (!osmJeton) connexionOsm();
+  else if (confirm('Se déconnecter du compte OSM « ' + osmUtilisateur + ' » ?')) deconnexionOsm();
+};
+majCompteOsm();
+
+// ----- Préparation des données -----
+const SURFACE_OSM = { bitume: 'asphalt', beton: 'concrete', bombee: 'compacted', naturel: 'ground' };
+
+// Étiquettes OSM de la contribution (null si la catégorie n'a pas d'équivalent OSM)
+function tagsOsm(c) {
+  const cat = catInfo(c.categorie);
+  if (!cat.osm) return null;
+  const tags = {};
+  for (const kv of cat.osm.split(';')) {
+    const i = kv.indexOf('=');
+    tags[kv.slice(0, i)] = kv.slice(i + 1);
+  }
+  // Les émojis n'ont pas leur place dans les noms OSM
+  const nom = String(c.nom || '').replace(/[\p{Extended_Pictographic}️‍]/gu, '').replace(/\s+/g, ' ').trim();
+  if (nom) tags.name = nom;
+  const at = c.attributs || {};
+  if (at.revetement && SURFACE_OSM[at.revetement]) tags.surface = SURFACE_OSM[at.revetement];
+  return tags;
+}
+
+// L'imagerie utilisée pour le tracé décide si la donnée peut aller dans OSM
+function verifierFond(c) {
+  const fond = (c.attributs || {}).fond;
+  if (fond === 'esri') return { ok: true, source: 'Esri World Imagery' };
+  if (fond === 'osm') return { ok: true, source: 'local_knowledge' };
+  if (fond === 'google') {
+    return { ok: false, raison: 'Tracée sur Google Satellite : le tracé à partir des images Google est interdit dans OSM. À retracer sur le fond Esri.' };
+  }
+  if (c.geom_type === 'point') return { ok: 'a_confirmer', source: 'local_knowledge' };
+  return { ok: false, raison: 'Fond de carte d’origine inconnu (contribution antérieure, probablement tracée sur Google). À retracer sur le fond Esri.' };
+}
+
+function centreGeo(g) {
+  if (g.type === 'Point') return g.coordinates;
+  const pts = g.type === 'LineString' ? g.coordinates : g.coordinates[0];
+  return [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
+}
+
+// Objets OSM existants semblables à proximité (même étiquette principale ou même nom)
+async function chercherDoublons(c, tags) {
+  const [lon, lat] = centreGeo(c.geom_geojson);
+  const q = s => String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const [cle, valeur] = Object.entries(tags)[0];
+  let requete = `[out:json][timeout:20];(nwr(around:60,${lat},${lon})["${q(cle)}"="${q(valeur)}"];`;
+  if (tags.name) requete += `nwr(around:300,${lat},${lon})["name"="${q(tags.name)}"];`;
+  requete += ');out tags center 15;';
+  const r = await fetch(OVERPASS, { method: 'POST', body: new URLSearchParams({ data: requete }) });
+  if (!r.ok) throw new Error('Overpass ' + r.status);
+  return (await r.json()).elements;
+}
+
+function xmlEchap(s) {
+  return String(s).replace(/[&<>"']/g, ch =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[ch]));
+}
+function tagsXml(tags) {
+  return Object.entries(tags).map(([k, v]) => `<tag k="${xmlEchap(k)}" v="${xmlEchap(v)}"/>`).join('');
+}
+
+// Document osmChange : un nœud (lieu) ou une ligne / surface fermée avec ses nœuds
+function osmChange(c, tags, changeset) {
+  const g = c.geom_geojson;
+  let id = -1;
+  const noeuds = [];
+  const noeud = (lon, lat, contenu = '') => {
+    const n = id--;
+    noeuds.push(`<node id="${n}" changeset="${changeset}" lat="${Number(lat).toFixed(7)}" lon="${Number(lon).toFixed(7)}">${contenu}</node>`);
+    return n;
+  };
+  let chemin = '';
+  if (g.type === 'Point') {
+    noeud(g.coordinates[0], g.coordinates[1], tagsXml(tags));
+  } else {
+    const ferme = g.type === 'Polygon';
+    let pts = ferme ? g.coordinates[0] : g.coordinates;
+    const dernier = pts[pts.length - 1];
+    if (ferme && pts[0][0] === dernier[0] && pts[0][1] === dernier[1]) pts = pts.slice(0, -1);
+    const refs = pts.map(p => noeud(p[0], p[1]));
+    if (ferme) refs.push(refs[0]);
+    chemin = `<way id="${id--}" changeset="${changeset}">${refs.map(r => `<nd ref="${r}"/>`).join('')}${tagsXml(tags)}</way>`;
+  }
+  return `<osmChange version="0.6" generator="Guinée Carto"><create>${noeuds.join('')}${chemin}</create></osmChange>`;
+}
+
+async function requeteOsm(methode, chemin, corps) {
+  const r = await fetch(OSM_API + '/api/0.6/' + chemin, {
+    method: methode,
+    headers: { Authorization: 'Bearer ' + osmJeton, 'Content-Type': 'text/xml; charset=utf-8' },
+    body: corps,
+  });
+  const texte = await r.text();
+  if (!r.ok) throw new Error(r.status + ' — ' + texte.slice(0, 200));
+  return texte;
+}
+
+// Un changeset par contribution : ouverture, envoi, fermeture
+async function envoyerVersOsm(c, tags, source) {
+  const cat = catInfo(c.categorie);
+  const changeset = (await requeteOsm('PUT', 'changeset/create', '<osm><changeset>' + tagsXml({
+    created_by: 'Guinée Carto',
+    comment: 'Guinée Carto : ajout ' + cat.label + (tags.name ? ' « ' + tags.name + ' »' : '') + ' (contribution vérifiée par un modérateur)',
+    source, hashtags: '#GuineeCarto', locale: 'fr',
+  }) + '</changeset></osm>')).trim();
+  try {
+    const reponse = await requeteOsm('POST', `changeset/${changeset}/upload`, osmChange(c, tags, changeset));
+    const doc = new DOMParser().parseFromString(reponse, 'text/xml');
+    const cree = doc.querySelector(c.geom_type === 'point' ? 'node' : 'way');
+    return { type: cree.tagName, id: cree.getAttribute('new_id') };
+  } finally {
+    await requeteOsm('PUT', `changeset/${changeset}/close`).catch(() => {});
+  }
+}
+
+// ----- Fenêtre de vérification -----
+const osmModal = document.getElementById('osmModal');
+const osmCorps = document.getElementById('osmCorps');
+const osmEnvoyer = document.getElementById('osmEnvoyer');
+let osmSeq = 0;
+document.getElementById('osmFermer').onclick = () => { osmModal.style.display = 'none'; osmSeq++; };
+osmModal.addEventListener('click', e => { if (e.target === osmModal) { osmModal.style.display = 'none'; osmSeq++; } });
+
+async function ouvrirEnvoiOsm(c) {
+  const seq = ++osmSeq;
+  const cat = catInfo(c.categorie), tags = tagsOsm(c), fond = verifierFond(c);
+  osmModal.style.display = 'flex';
+  osmEnvoyer.disabled = true;
+  osmEnvoyer.style.display = '';
+  osmEnvoyer.onclick = null;
+
+  let html = `<div class="osm-titre">${cat.emoji} ${echap(c.nom || cat.label)}</div>`;
+  if (OSM_TEST) html += '<div class="osm-alerte info">🧪 Serveur de <b>test</b> OSM : rien ne sera publié sur la vraie carte, et le statut de la contribution ne changera pas.</div>';
+  const bloquer = message => {
+    osmCorps.innerHTML = html + `<div class="osm-alerte err">${message}</div>`;
+    osmEnvoyer.style.display = 'none';
+  };
+  if (!tags) return bloquer('Cette catégorie n’a pas d’équivalent dans OpenStreetMap : elle ne peut pas y être envoyée.');
+  if (fond.ok === false) return bloquer(echap(fond.raison));
+  if (!osmJeton) return bloquer('Connectez-vous d’abord à OpenStreetMap avec le bouton 🌍 en haut de la page.');
+
+  html += '<div class="osm-sous">Étiquettes OSM</div><table class="osm-tags">'
+    + Object.entries(tags).map(([k, v]) => `<tr><td>${echap(k)}</td><td>${echap(v)}</td></tr>`).join('') + '</table>'
+    + `<div class="osm-sous">Source</div><div style="font-size:13px">${echap(fond.source)}</div>`;
+  if (fond.ok === 'a_confirmer') {
+    html += '<label class="osm-confirme"><input type="checkbox" id="osmPosOk"> J’ai vérifié que la position est juste sur le fond <b>Esri</b> (fond d’origine inconnu pour cette contribution).</label>';
+  }
+  html += '<div class="osm-sous">Doublons possibles dans OSM</div><div id="osmDoublons" style="font-size:13px">Recherche en cours…</div>';
+  osmCorps.innerHTML = html;
+
+  const majBouton = () => {
+    const cases = [...osmCorps.querySelectorAll('input[type=checkbox]')];
+    osmEnvoyer.disabled = !cases.every(x => x.checked);
+  };
+
+  const zone = document.getElementById('osmDoublons');
+  try {
+    const trouves = await chercherDoublons(c, tags);
+    if (seq !== osmSeq) return; // fenêtre fermée ou autre contribution ouverte entre-temps
+    if (!trouves.length) {
+      zone.innerHTML = '<div class="osm-alerte ok">✓ Aucun objet semblable à proximité dans OSM.</div>';
+    } else {
+      zone.innerHTML = trouves.map(o => {
+        const t = o.tags || {};
+        return `<div class="osm-doublon"><span>${echap(t.name || '(sans nom)')} · ${echap(Object.entries(t).filter(([k]) => k !== 'name')[0]?.join('=') || '')}</span>
+          <a href="https://www.openstreetmap.org/${o.type}/${o.id}" target="_blank" rel="noopener">voir ↗</a></div>`;
+      }).join('') + '<label class="osm-confirme"><input type="checkbox" id="osmPasDoublon"> J’ai vérifié : ce n’est pas un doublon de ces objets.</label>';
+    }
+  } catch (e) {
+    if (seq !== osmSeq) return;
+    zone.innerHTML = '<div class="osm-alerte err">Recherche de doublons impossible (Overpass indisponible).</div>'
+      + '<label class="osm-confirme"><input type="checkbox" id="osmPasDoublon"> J’ai vérifié moi-même sur openstreetmap.org qu’il n’y a pas de doublon.</label>';
+  }
+  osmCorps.querySelectorAll('input[type=checkbox]').forEach(x => { x.onchange = majBouton; });
+  majBouton();
+
+  osmEnvoyer.onclick = async () => {
+    osmEnvoyer.disabled = true;
+    osmEnvoyer.textContent = '⏳ Envoi…';
+    try {
+      const res = await envoyerVersOsm(c, tags, fond.source);
+      const lien = `${OSM_SERVEUR}/${res.type}/${res.id}`;
+      osmCorps.innerHTML = `<div class="osm-alerte ok">✓ Envoyé dans OpenStreetMap${OSM_TEST ? ' (serveur de test)' : ''} :
+        <a href="${lien}" target="_blank" rel="noopener">${res.type} ${res.id} ↗</a></div>`;
+      osmEnvoyer.style.display = 'none';
+      if (!OSM_TEST) await changerStatut(c, 'importe_osm');
+    } catch (e) {
+      osmCorps.insertAdjacentHTML('beforeend', `<div class="osm-alerte err">Échec de l’envoi : ${echap(e.message)}</div>`);
+      osmEnvoyer.disabled = false;
+    } finally {
+      osmEnvoyer.textContent = '🌍 Envoyer';
+    }
+  };
+}
 </script>
 <div style="position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:99999;background:#FF9500;color:#fff;font:600 11px/1 sans-serif;padding:4px 10px;border-radius:0 0 6px 6px;pointer-events:none">VERSION DÉMO</div>
 </body>
