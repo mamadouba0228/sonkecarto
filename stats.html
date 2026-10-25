@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Guinée Carto — Avancement de la cartographie</title>
 <link rel="icon" type="image/png" href="icone-192.png">
-<meta name="theme-color" content="#009460">
+<meta name="theme-color" content="#0F2A22">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  :root { --vert: #009460; --vert-fonce: #00714a; --vert-clair: #e3f5ec; --texte: #1d2823; --bord: #e3e8e5; --fond: #f4f7f5; }
+  :root { --vert: #0E7C5A; --vert-fonce: #0A5E44; --vert-clair: #E6F4EE; --texte: #17241F; --bord: #E1E7E3; --fond: #F3F6F4; --nuit: #0F2A22; --nuit-2: #17392E; --jaune: #F2B705; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--fond); color: var(--texte); -webkit-font-smoothing: antialiased; }
   header {
-    background: linear-gradient(120deg, #00a46b 0%, var(--vert) 45%, var(--vert-fonce) 100%); color: #fff;
+    background: linear-gradient(120deg, var(--nuit) 0%, var(--nuit-2) 100%); color: #fff;
     padding: 34px 16px 70px; text-align: center; position: relative; overflow: hidden;
   }
   /* Rappel discret des couleurs du drapeau */
@@ -32,7 +32,7 @@
   .carte .libelle { font-size: 12px; color: #6b7872; font-weight: 600; }
   /* Carte principale : contributions validées */
   .carte.principale { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 16px; padding: 20px;
-    background: linear-gradient(135deg, #0a5c40, var(--vert)); color: #fff; }
+    background: linear-gradient(135deg, #0B5A41, var(--vert)); color: #fff; }
   .carte.principale .ico { width: 52px; height: 52px; font-size: 26px; border-radius: 14px; }
   .carte.principale .ico { background: rgba(255,255,255,.18); }
   .carte.principale .chiffre { color: #fff; font-size: 40px; }
@@ -50,7 +50,7 @@
   .barre-tete { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
   .barre-tete .n { color: var(--vert-fonce); font-variant-numeric: tabular-nums; }
   .barre-fond { background: #edf1ee; border-radius: 8px; height: 10px; overflow: hidden; }
-  .barre-rempli { background: linear-gradient(90deg, var(--vert), #2fb985); height: 100%; border-radius: 8px; width: 0; transition: width .8s cubic-bezier(.2,.8,.2,1); }
+  .barre-rempli { background: linear-gradient(90deg, var(--vert), #27A57A); height: 100%; border-radius: 8px; width: 0; transition: width .8s cubic-bezier(.2,.8,.2,1); }
   #vide { color: #7d8a83; font-size: 14px; text-align: center; padding: 24px 0 30px; line-height: 1.6; }
   .retour { display: inline-block; margin-top: 26px; background: var(--vert); color: #fff; text-decoration: none;
     font-weight: 700; font-size: 14px; padding: 13px 24px; border-radius: 24px; box-shadow: 0 4px 14px rgba(0,60,38,.3); }
