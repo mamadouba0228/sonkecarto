@@ -15,7 +15,7 @@
 //
 // Changer VERSION purge les anciens caches de l'application.
 // ============================================================
-const VERSION = 'v3';
+const VERSION = 'v4';
 const PORTEE = self.registration.scope;          // démo et stable ont chacun leur cache
 const CACHE_APP = `gc-app-${VERSION}-${PORTEE}`;
 const CACHE_DONNEES = `gc-donnees-${PORTEE}`;
@@ -134,4 +134,42 @@ self.addEventListener('fetch', (e) => {
   if (!estApp) return;
   const cle = req.mode === 'navigate' && chemin === '' ? './' : './' + chemin;
   e.respondWith(reseauPuisCache(req, CACHE_APP, new URL(cle, PORTEE).href, DELAI_PAGE));
+});
+
+// ------------------------------------------------------------
+// Notifications push : affichage, et ouverture de la bonne
+// discussion / contribution quand on touche la notification.
+// ------------------------------------------------------------
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { titre: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.titre || 'Guinée Carto', {
+    body: d.texte || (d.statut ? 'Touchez pour voir votre contribution.' : 'Touchez pour lire.'),
+    icon: 'icone-192.png',
+    badge: 'icone-192.png',
+    tag: d.cid ? 'gc-' + d.cid : 'gc',
+    renotify: true,
+    data: d,
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const d = e.notification.data || {};
+  const url = new URL('./', PORTEE);
+  if (d.cid) {
+    url.searchParams.set('discussion', d.cid);
+    if (d.type) url.searchParams.set('type', d.type);
+    if (d.nom) url.searchParams.set('nom', d.nom);
+    if (d.statut) url.searchParams.set('statut', d.statut);
+  }
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((fenetres) => {
+    for (const f of fenetres) {
+      if (f.url.startsWith(PORTEE) && !f.url.includes('admin.html') && 'focus' in f) {
+        f.postMessage({ gc: 'ouvrir', ...d });
+        return f.focus();
+      }
+    }
+    return self.clients.openWindow(url.href);
+  }));
 });
