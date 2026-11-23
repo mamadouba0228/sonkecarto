@@ -433,6 +433,15 @@ function echap(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Appel à l'API admin : le mot de passe part dans l'en-tête X-Admin-Token,
+// jamais dans l'adresse (qui est enregistrée dans les journaux du serveur).
+function appelAdmin(params, options = {}) {
+  return fetch(API + '?' + new URLSearchParams(params), {
+    ...options,
+    headers: { ...(options.headers || {}), 'X-Admin-Token': token },
+  });
+}
+
 // Les photos sont stockées à côté de l'API : chemin relatif → adresse complète
 function urlPhoto(p) {
   return /^(data:|https?:)/.test(p) ? p : new URL(p, new URL(API, location.href)).href;
@@ -449,7 +458,7 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
   token = document.getElementById('inpToken').value.trim();
   try {
-    const r = await fetch(API + '?action=pending&statut=en_attente&token=' + encodeURIComponent(token));
+    const r = await appelAdmin({ action: 'pending', statut: 'en_attente' });
     const d = await r.json();
     if (!d.ok) throw new Error();
     document.getElementById('login').style.display = 'none';
@@ -631,17 +640,31 @@ function initCarte() {
   setTimeout(() => carte.invalidateSize(), 100);
 }
 
+// Exports GeoJSON : téléchargés par fetch pour que le mot de passe reste dans l'en-tête
 function majLiensExport() {
-  document.getElementById('lienExportValide').href =
-    API + '?action=export&statut=valide&token=' + encodeURIComponent(token);
-  document.getElementById('lienExportAttente').href =
-    API + '?action=export&statut=en_attente&token=' + encodeURIComponent(token);
-  document.getElementById('expPts').href =
-    API + '?action=export&statut=valide&couche=ponctuels&token=' + encodeURIComponent(token);
-  document.getElementById('expLin').href =
-    API + '?action=export&statut=valide&couche=lineaires&token=' + encodeURIComponent(token);
-  document.getElementById('expSrf').href =
-    API + '?action=export&statut=valide&couche=surfaciques&token=' + encodeURIComponent(token);
+  const exports = {
+    lienExportValide: { statut: 'valide' },
+    lienExportAttente: { statut: 'en_attente' },
+    expPts: { statut: 'valide', couche: 'ponctuels' },
+    expLin: { statut: 'valide', couche: 'lineaires' },
+    expSrf: { statut: 'valide', couche: 'surfaciques' },
+  };
+  for (const [idLien, params] of Object.entries(exports)) {
+    document.getElementById(idLien).onclick = async e => {
+      e.preventDefault();
+      try {
+        const r = await appelAdmin({ action: 'export', ...params });
+        if (!r.ok) throw new Error(r.status);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(await r.blob());
+        a.download = ['guineecarto', params.statut, params.couche].filter(Boolean).join('_') + '.geojson';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      } catch (err) {
+        alert('Export impossible (' + err.message + ').');
+      }
+    };
+  }
 }
 
 // ---------- Affichage ----------
@@ -757,7 +780,7 @@ function afficher(liste, recadrer = false) {
 }
 
 async function changerStatut(c, statut) {
-  const r = await fetch(API + '?action=setstatut&token=' + encodeURIComponent(token), {
+  const r = await appelAdmin({ action: 'setstatut' }, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: c.id, geom_type: c.geom_type, statut }),
@@ -783,8 +806,7 @@ const LIBELLES_REV_A = {
 async function rafraichir(recadrer = false) {
   // « Envoyables vers OSM » : contributions validées, filtrées dans le navigateur
   const statut = filtreStatut === 'osm' ? 'valide' : filtreStatut;
-  const r = await fetch(API + '?action=pending&statut=' + statut
-    + '&token=' + encodeURIComponent(token));
+  const r = await appelAdmin({ action: 'pending', statut });
   const d = await r.json();
   if (d.ok) afficher(filtreStatut === 'osm' ? d.contributions.filter(c => !raisonBlocageOsm(c)) : d.contributions, recadrer);
 }
@@ -820,7 +842,7 @@ const TYPES_ALERTE = {
 async function chargerStats() {
   const dash = document.getElementById('dashboard');
   dash.innerHTML = '<div id="vide">Calcul en cours…</div>';
-  const r = await fetch(API + '?action=stats&token=' + encodeURIComponent(token));
+  const r = await appelAdmin({ action: 'stats' });
   const d = await r.json();
   if (!d.ok) { dash.innerHTML = '<div id="vide">Erreur de chargement.</div>'; return; }
 
@@ -892,8 +914,7 @@ document.addEventListener('click', async function(e) {
   const zone = document.getElementById('comms-' + id);
   zone.innerHTML = '<span style="color:#aaa;font-size:12px">Chargement…</span>';
   try {
-    const r = await fetch(API + '?action=commentaires&id=' + encodeURIComponent(id)
-      + '&token=' + encodeURIComponent(token));
+    const r = await appelAdmin({ action: 'commentaires', id });
     const d = await r.json();
     if (!d.commentaires.length) {
       zone.innerHTML = '<span style="color:#aaa;font-size:12px">Aucun commentaire.</span>'; return;
@@ -914,14 +935,13 @@ document.addEventListener('click', async function(e) {
   const btn = e.target.closest('.btn-del-comm');
   if (!btn) return;
   if (!confirm('Supprimer ce commentaire ?')) return;
-  const r = await fetch(API + '?action=delete_commentaire&token=' + encodeURIComponent(token), {
+  const r = await appelAdmin({ action: 'delete_commentaire' }, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: btn.dataset.commid })
   });
   const d = await r.json();
   if (d.ok) {
     btn.closest('.comm-admin').remove();
-    toast && toast('Commentaire supprimé.');
   }
 });
 
@@ -1280,7 +1300,7 @@ rtValider.onclick = async () => {
   rtValider.disabled = true;
   rtValider.textContent = '⏳ Enregistrement…';
   try {
-    const rep = await fetch(API + '?action=set_geom&token=' + encodeURIComponent(token), {
+    const rep = await appelAdmin({ action: 'set_geom' }, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: r.c.id, geom_type: r.c.geom_type, geom_geojson: geo }),
