@@ -455,7 +455,7 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
     document.getElementById('login').style.display = 'none';
     document.getElementById('admin').classList.add('actif');
     initCarte();
-    afficher(d.contributions);
+    afficher(d.contributions, true);
     majLiensExport();
   } catch (err) {
     document.getElementById('loginErr').style.display = 'block';
@@ -645,7 +645,15 @@ function majLiensExport() {
 }
 
 // ---------- Affichage ----------
-function afficher(liste) {
+// Cadre la carte exactement sur un objet : zoom fort sur un point, forme entière pour une ligne ou une surface
+function centrerSur(geomType, pts) {
+  if (geomType === 'point') carte.setView(pts[0], 18);
+  else carte.fitBounds(L.latLngBounds(pts), { padding: [60, 60], maxZoom: 18 });
+}
+
+// recadrer : ajuste la carte sur toutes les contributions (connexion, changement de filtre),
+// jamais lors des rafraîchissements automatiques, pour ne pas déplacer la vue en cours de travail.
+function afficher(liste, recadrer = false) {
   pending = liste;
   couche.clearLayers();
   const cont = document.getElementById('pendingListe');
@@ -683,6 +691,7 @@ function afficher(liste) {
     objet.bindPopup(`<div class="pp-titre">${emoji} ${echap(c.nom) || echap(cat.label)}</div>
       <div class="pp-type">${echap(cat.label)}</div>${c.notes ? '<div class="pp-note">« ' + echap(c.notes) + ' »</div>' : ''}`,
       { className: 'pp-popup', maxWidth: 260 });
+    objet.on('click', () => centrerSur(c.geom_type, pts)); // clic sur l'objet : la carte se cadre dessus
 
     const at = c.attributs || {};
     const auteur = c.c_prenom ? c.c_prenom + ' ' + (c.c_nom || '') : (c.contributeur || '');
@@ -729,8 +738,8 @@ function afficher(liste) {
       </div>`;
     div.querySelector('.titre').onclick =
     div.querySelector('.b-voir').onclick = () => {
-      carte.setView(pts[Math.floor(pts.length / 2)], 17);
-      objet.openPopup();
+      centrerSur(c.geom_type, pts);
+      setTimeout(() => objet.openPopup(), 300);
     };
     const bOk = div.querySelector('.b-ok');
     if (bOk) bOk.onclick = () => changerStatut(c, 'valide');
@@ -744,7 +753,7 @@ function afficher(liste) {
     if (bRetracer) bRetracer.onclick = () => demarrerRetrace(c);
     cont.appendChild(div);
   }
-  if (bounds.length) carte.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+  if (recadrer && bounds.length) carte.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
 }
 
 async function changerStatut(c, statut) {
@@ -771,11 +780,13 @@ const LIBELLES_REV_A = {
   bitume: '🛣️ Bitumée', beton: '🏗️ Bétonnée',
   bombee: '🪨 Bombée (latérite)', naturel: '🌿 État naturel'
 };
-async function rafraichir() {
-  const r = await fetch(API + '?action=pending&statut=' + filtreStatut
+async function rafraichir(recadrer = false) {
+  // « Envoyables vers OSM » : contributions validées, filtrées dans le navigateur
+  const statut = filtreStatut === 'osm' ? 'valide' : filtreStatut;
+  const r = await fetch(API + '?action=pending&statut=' + statut
     + '&token=' + encodeURIComponent(token));
   const d = await r.json();
-  if (d.ok) afficher(filtreStatut === 'osm' ? d.contributions.filter(c => !raisonBlocageOsm(c)) : d.contributions);
+  if (d.ok) afficher(filtreStatut === 'osm' ? d.contributions.filter(c => !raisonBlocageOsm(c)) : d.contributions, recadrer);
 }
 document.getElementById('btnRafraichir').onclick = rafraichir;
 
@@ -796,7 +807,7 @@ document.querySelectorAll('.filtre').forEach(b => {
       liste.style.display = 'block';
       dash.style.display = 'none';
       document.getElementById('titrePanneau').textContent = TITRES_FILTRE[filtreStatut];
-      rafraichir();
+      rafraichir(true);
     }
   };
 });
@@ -935,7 +946,10 @@ function exporterCsv() {
 }
 
 // La liste se met à jour automatiquement toutes les 60 secondes
-setInterval(() => { if (token && navigator.onLine) rafraichir(); }, 60000);
+// (sauf pendant un retracé ou une vérification OSM, pour ne pas perturber le travail)
+setInterval(() => {
+  if (token && navigator.onLine && !retraceEnCours() && osmModal.style.display !== 'flex') rafraichir();
+}, 60000);
 </script>
 
 <script>
@@ -1184,6 +1198,7 @@ async function envoyerVersOsm(c, tags, source) {
 
 // ----- Retracé d'une contribution sur l'imagerie Esri -----
 let retrace = null; // { c, pts, guide, dessin }
+const retraceEnCours = () => retrace !== null;
 const barreRetrace = document.getElementById('barreRetrace');
 const rtValider = document.getElementById('rtValider');
 
@@ -1235,8 +1250,7 @@ function demarrerRetrace(c) {
   }[c.geom_type];
   barreRetrace.classList.add('actif');
   document.getElementById('map').classList.add('retrace');
-  carte.fitBounds(c.geom_type === 'point' ? L.latLng(ancien[0]).toBounds(150) : L.latLngBounds(ancien),
-    { padding: [60, 60], maxZoom: 18 });
+  centrerSur(c.geom_type, ancien);
   carte.on('click', clicRetrace);
   dessinerRetrace();
 }
