@@ -144,6 +144,59 @@ function enregistrerCompte(PDO $pdo, string $dev, array $c, bool $exigerComplet 
     return true;
 }
 
+// ------------------------------------------------------------
+// Notifications push (Web Push, clés VAPID gardées hors du site web)
+// ------------------------------------------------------------
+function clesVapid(): ?array {
+    $f = dirname(__DIR__, 2) . '/outils/vapid_sonkecarto.php';
+    if (!is_file($f)) return null;
+    $k = require $f;
+    return (is_array($k) && !empty($k['public']) && !empty($k['private'])) ? $k : null;
+}
+
+// $messages : [device_id => ['corps' => ..., ...]] — un message par destinataire.
+// Ne bloque jamais : toute erreur d'envoi est ignorée.
+function notifierPush(PDO $pdo, array $messages): void {
+    $messages = array_filter($messages);
+    if (!$messages || !($cles = clesVapid()) || !is_file(__DIR__ . '/vendor/autoload.php')) return;
+    try {
+        require_once __DIR__ . '/vendor/autoload.php';
+        $devs = array_keys($messages);
+        $in = implode(',', array_fill(0, count($devs), '?'));
+        $st = $pdo->prepare("SELECT device_id, endpoint, p256dh, auth FROM push_abonnements WHERE device_id IN ($in)");
+        $st->execute($devs);
+        $abos = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!$abos) return;
+        $wp = new \Minishlink\WebPush\WebPush(
+            ['VAPID' => ['subject' => 'https://lamadgeo.alwaysdata.net/sonkecarto/',
+                         'publicKey' => $cles['public'], 'privateKey' => $cles['private']]],
+            ['TTL' => 3 * 86400, 'urgency' => 'normal'], 10
+        );
+        foreach ($abos as $a) {
+            $wp->queueNotification(
+                \Minishlink\WebPush\Subscription::create([
+                    'endpoint' => $a['endpoint'], 'publicKey' => $a['p256dh'],
+                    'authToken' => $a['auth'], 'contentEncoding' => 'aes128gcm']),
+                json_encode($messages[$a['device_id']], JSON_UNESCAPED_UNICODE)
+            );
+        }
+        foreach ($wp->flush() as $rapport) {
+            // Téléphone désabonné ou appli désinstallée : on oublie l'abonnement
+            if ($rapport->isSubscriptionExpired()) {
+                $pdo->prepare('DELETE FROM push_abonnements WHERE endpoint = :e')
+                    ->execute([':e' => $rapport->getEndpoint()]);
+            }
+        }
+    } catch (\Throwable $e) { /* les notifications sont un bonus : jamais d'erreur visible */ }
+}
+
+// Répond tout de suite au téléphone, puis continue (envoi des notifications)
+function repondreEtContinuer(array $data): void {
+    echo json_encode($data);
+    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+    else { @ob_end_flush(); @flush(); }
+}
+
 function repondre(array $data, int $code = 200): void {
     http_response_code($code);
     echo json_encode($data);
@@ -260,14 +313,17 @@ case 'add_commentaire':
     if ($texte === '') repondre(['ok' => false, 'erreur' => 'Le commentaire est vide.'], 400);
     if (quotaDepasse($pdo)) repondre(['ok' => false, 'erreur' => 'Trop d’envois aujourd’hui. Réessayez demain.'], 429);
     $table = TABLES[$type];
-    $st = $pdo->prepare("SELECT 1 FROM $table WHERE id = :id AND statut <> 'rejete'");
+    $st = $pdo->prepare("SELECT device_id, nom FROM $table WHERE id = :id AND statut <> 'rejete'");
     $st->execute([':id' => $cid]);
-    if (!$st->fetchColumn()) repondre(['ok' => false, 'erreur' => 'Contribution introuvable.'], 404);
+    $contrib = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$contrib) repondre(['ok' => false, 'erreur' => 'Contribution introuvable.'], 404);
+    $devParent = '';
     if ($rep !== '') {
         // Une réponse vise toujours un commentaire de la même contribution
-        $st = $pdo->prepare('SELECT 1 FROM commentaires WHERE id = :r AND contribution_id = :c');
-        $st->execute([':r' => $rep, ':c' => $cid]);
-        if (!estUuid($rep) || !$st->fetchColumn()) $rep = '';
+        $st = estUuid($rep) ? $pdo->prepare('SELECT device_id FROM commentaires WHERE id = :r AND contribution_id = :c') : null;
+        if ($st) $st->execute([':r' => $rep, ':c' => $cid]);
+        $v = $st ? $st->fetchColumn() : false;
+        if ($v === false) $rep = ''; else $devParent = (string)$v;
     }
     // Double envoi (double appui) : même texte du même appareil dans la minute
     $st = $pdo->prepare("SELECT 1 FROM commentaires WHERE device_id = :d AND contribution_id = :c
@@ -279,6 +335,57 @@ case 'add_commentaire':
          VALUES (gen_random_uuid(), :c, :ty, :d, :a, :t, NULLIF(:r, '')::uuid)"
     );
     $st->execute([':c' => $cid, ':ty' => $type, ':d' => $dev, ':a' => $aut, ':t' => $texte, ':r' => $rep]);
+    repondreEtContinuer(['ok' => true]);
+
+    // Notifications : réponse directe > auteur de la contribution > autres participants
+    $nomC = trim((string)($contrib['nom'] ?? ''));
+    $sur  = $nomC !== '' ? ' « ' . $nomC . ' »' : '';
+    $extrait = function_exists('mb_strimwidth') ? mb_strimwidth($texte, 0, 120, '…') : substr($texte, 0, 120);
+    $base = ['cid' => $cid, 'type' => $type, 'nom' => $nomC, 'texte' => $extrait];
+    $messages = [];
+    $st = $pdo->prepare('SELECT DISTINCT device_id FROM commentaires WHERE contribution_id = :c AND device_id <> \'\'');
+    $st->execute([':c' => $cid]);
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $d) {
+        $messages[$d] = $base + ['titre' => '💬 ' . $aut . ' a écrit dans une discussion que vous suivez' . $sur];
+    }
+    $proprio = (string)($contrib['device_id'] ?? '');
+    if ($proprio !== '') $messages[$proprio] = $base + ['titre' => '💬 ' . $aut . ' a commenté votre contribution' . $sur];
+    if ($devParent !== '') $messages[$devParent] = $base + ['titre' => '↩ ' . $aut . ' vous a répondu' . $sur];
+    unset($messages[$dev]); // jamais à soi-même
+    notifierPush($pdo, array_slice($messages, 0, 50, true));
+    exit;
+
+// ------------------------------------------------------------
+// PUBLIC : notifications push — clé publique, abonnement, désabonnement
+// ------------------------------------------------------------
+case 'push_cle':
+    $cles = clesVapid();
+    repondre($cles ? ['ok' => true, 'cle' => $cles['public']] : ['ok' => false]);
+
+case 'push_abonner':
+    if (!is_array($input)) repondre(['ok' => false, 'erreur' => 'Corps JSON manquant.'], 400);
+    $dev = limiter((string)($input['device_id'] ?? ''), 64);
+    $ab  = $input['abonnement'] ?? null;
+    $end = is_array($ab) ? (string)($ab['endpoint'] ?? '') : '';
+    $p256 = is_array($ab) ? (string)($ab['keys']['p256dh'] ?? '') : '';
+    $auth = is_array($ab) ? (string)($ab['keys']['auth'] ?? '') : '';
+    if ($dev === '' || !preg_match('#^https://[^\s]{10,800}$#', $end)
+        || !preg_match('/^[A-Za-z0-9_-]{20,200}={0,2}$/', $p256) || !preg_match('/^[A-Za-z0-9_-]{8,100}={0,2}$/', $auth)) {
+        repondre(['ok' => false, 'erreur' => 'Abonnement invalide.'], 400);
+    }
+    $st = $pdo->prepare(
+        "INSERT INTO push_abonnements (device_id, endpoint, p256dh, auth) VALUES (:d, :e, :p, :a)
+         ON CONFLICT (endpoint) DO UPDATE SET device_id = :d, p256dh = :p, auth = :a"
+    );
+    $st->execute([':d' => $dev, ':e' => $end, ':p' => $p256, ':a' => $auth]);
+    repondre(['ok' => true]);
+
+case 'push_desabonner':
+    if (!is_array($input)) repondre(['ok' => false, 'erreur' => 'Corps JSON manquant.'], 400);
+    $end = (string)($input['endpoint'] ?? '');
+    $dev = limiter((string)($input['device_id'] ?? ''), 64);
+    $pdo->prepare('DELETE FROM push_abonnements WHERE endpoint = :e AND device_id = :d')
+        ->execute([':e' => $end, ':d' => $dev]);
     repondre(['ok' => true]);
 
 // ------------------------------------------------------------
@@ -591,9 +698,31 @@ case 'setstatut':
     }
     $tables = isset(TABLES[$type]) ? [TABLES[$type]] : array_values(TABLES);
     foreach ($tables as $table) {
-        $st = $pdo->prepare("UPDATE $table SET statut = :s WHERE id = :id");
+        $st = $pdo->prepare("UPDATE $table SET statut = :s WHERE id = :id AND statut <> :s RETURNING device_id, nom");
         $st->execute([':s' => $statut, ':id' => $id]);
-        if ($st->rowCount() > 0) repondre(['ok' => true, 'table' => $table]);
+        $maj = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$maj) {
+            // Statut déjà en place : rien à notifier
+            $st = $pdo->prepare("SELECT 1 FROM $table WHERE id = :id");
+            $st->execute([':id' => $id]);
+            if ($st->fetchColumn()) repondre(['ok' => true, 'table' => $table]);
+            continue;
+        }
+        repondreEtContinuer(['ok' => true, 'table' => $table]);
+        // Le contributeur est prévenu de la décision de modération
+        $nomC = trim((string)($maj['nom'] ?? ''));
+        $titres = [
+            'valide' => '🎉 Votre contribution' . ($nomC !== '' ? ' « ' . $nomC . ' »' : '') . ' a été validée !',
+            'importe_osm' => '🌍 Votre contribution' . ($nomC !== '' ? ' « ' . $nomC . ' »' : '') . ' est maintenant dans OpenStreetMap !',
+            'rejete' => 'Votre contribution' . ($nomC !== '' ? ' « ' . $nomC . ' »' : '') . ' n’a pas été retenue. Consultez les commentaires.',
+        ];
+        $dev = (string)($maj['device_id'] ?? '');
+        if ($dev !== '' && isset($titres[$statut])) {
+            $typeC = array_search($table, TABLES, true) ?: $type;
+            notifierPush($pdo, [$dev => ['titre' => $titres[$statut], 'cid' => $id, 'type' => $typeC,
+                                         'nom' => $nomC, 'statut' => $statut]]);
+        }
+        exit;
     }
     repondre(['ok' => false, 'erreur' => 'Contribution introuvable.'], 404);
 
