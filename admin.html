@@ -724,7 +724,9 @@ function afficher(liste, recadrer = false) {
 
     const at = c.attributs || {};
     const auteur = c.c_prenom ? c.c_prenom + ' ' + (c.c_nom || '') : (c.contributeur || '');
-    const date = new Date(String(c.created_at).replace(' ', 'T'));
+    // Format PostgreSQL « 2026-11-23 05:18:12.901311+00 » → ISO lisible par tous les navigateurs
+    const date = new Date(String(c.created_at || '').trim().replace(' ', 'T')
+      .replace(/(\.\d{3})\d+/, '$1').replace(/([+-]\d{2})$/, '$1:00'));
     const infos = [
       auteur && ['👤', echap(auteur)],
       (c.c_village || c.c_sp) && ['🏡', 'Habite : ' + echap([c.c_village, c.c_sp].filter(Boolean).join(' — '))
