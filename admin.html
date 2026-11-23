@@ -49,6 +49,8 @@
   #admin { display: none; height: calc(100% - 56px); }
   #admin.actif { display: flex; }
   #map { flex: 1; }
+  /* Esri limité au zoom 17 sur la Guinée : contraste et couleurs relevés */
+  .fond-esri { filter: contrast(1.12) saturate(1.2) brightness(1.04); }
   #cote { width: 420px; border-left: 1px solid var(--bord); display: flex; flex-direction: column; background: var(--fond); }
   #cote header { padding: 14px 16px 10px; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; background: #fff; }
   #cote header span#titrePanneau { flex: 1; }
@@ -480,7 +482,8 @@ function initCarte() {
   });
   const fondSatellite = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 19, maxNativeZoom: 17,
+    // Esri n'a pas d'image au-delà du zoom 17 sur la Guinée : on s'arrête à 18 (moins de flou)
+    maxZoom: 18, maxNativeZoom: 17, className: 'fond-esri',
     attribution: '© Esri — Source : Esri, Maxar, Earthstar Geographics, et la communauté des utilisateurs SIG'
   });
   // Fond Google hybride — accès non officiel ; Esri reste en secours.
@@ -489,6 +492,9 @@ function initCarte() {
   });
   // Esri par défaut : seule imagerie dont le tracé est autorisé dans OpenStreetMap.
   fondSatellite.addTo(carte);
+  carte.on('baselayerchange', () => setTimeout(() => {
+    if (carte.getZoom() > carte.getMaxZoom()) carte.setZoom(carte.getMaxZoom());
+  }, 0));
   const controleFonds = L.control.layers(
     { '🛰️ Satellite (Esri)': fondSatellite, '🛰️ Google Satellite': fondGoogle, '🗺️ Plan (OSM)': fondPlan },
     null, { position: 'topleft', collapsed: window.innerWidth < 800 }
@@ -718,7 +724,9 @@ function afficher(liste, recadrer = false) {
 
     const at = c.attributs || {};
     const auteur = c.c_prenom ? c.c_prenom + ' ' + (c.c_nom || '') : (c.contributeur || '');
-    const date = new Date(String(c.created_at).replace(' ', 'T'));
+    // Format PostgreSQL « 2026-11-23 05:18:12.901311+00 » → ISO lisible par tous les navigateurs
+    const date = new Date(String(c.created_at || '').trim().replace(' ', 'T')
+      .replace(/(\.\d{3})\d+/, '$1').replace(/([+-]\d{2})$/, '$1:00'));
     const infos = [
       auteur && ['👤', echap(auteur)],
       (c.c_village || c.c_sp) && ['🏡', 'Habite : ' + echap([c.c_village, c.c_sp].filter(Boolean).join(' — '))
