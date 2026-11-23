@@ -63,6 +63,11 @@ try {
 $action = $_GET['action'] ?? '';
 $input  = json_decode(file_get_contents('php://input'), true);
 
+// Identifiant UUID (contributions, commentaires)
+function estUuid($s): bool {
+    return is_string($s) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $s) === 1;
+}
+
 // Tronque une chaîne (utilise mbstring si disponible, sinon repli standard)
 function limiter(string $s, int $max): string {
     $s = trim($s);
@@ -189,7 +194,149 @@ case 'list':
         }
         unset($r['c_prenom'], $r['c_nom']);
     }
+    unset($r);
+    // Nombre de commentaires par contribution (affiché sur la carte et dans la liste)
+    try {
+        $nb = $pdo->query("SELECT contribution_id::text, COUNT(*) FROM commentaires GROUP BY 1")
+                  ->fetchAll(PDO::FETCH_KEY_PAIR);
+        foreach ($rows as &$r) $r['nb_commentaires'] = (int)($nb[$r['id']] ?? 0);
+        unset($r);
+    } catch (Exception $e) { /* table absente : pas de compteur */ }
     repondre(['ok' => true, 'contributions' => $rows]);
+
+// ------------------------------------------------------------
+// PUBLIC : discussion d'une contribution (commentaires et réponses)
+// GET ?action=commentaires&id=<contribution>&dev=<appareil, facultatif>
+// ------------------------------------------------------------
+case 'commentaires':
+    $cid = (string)($_GET['id'] ?? '');
+    if (!estUuid($cid)) repondre(['ok' => false, 'erreur' => 'Identifiant invalide.'], 400);
+    $dev = limiter((string)($_GET['dev'] ?? ''), 64);
+    // Appareil de l'auteur de la contribution (pour le badge « auteur »)
+    $devContrib = '';
+    foreach (TABLES as $table) {
+        $st = $pdo->prepare("SELECT device_id FROM $table WHERE id = :id");
+        $st->execute([':id' => $cid]);
+        $v = $st->fetchColumn();
+        if ($v !== false) { $devContrib = (string)$v; break; }
+    }
+    $st = $pdo->prepare(
+        "SELECT c.id, c.auteur, c.texte, c.created_at, c.reponse_a, c.device_id, co.village
+         FROM commentaires c
+         LEFT JOIN contributeurs co ON co.device_id = c.device_id
+         WHERE c.contribution_id = :id ORDER BY c.created_at"
+    );
+    $st->execute([':id' => $cid]);
+    $liste = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        $d = (string)$c['device_id'];
+        $liste[] = [
+            'id' => $c['id'], 'auteur' => $c['auteur'], 'texte' => $c['texte'],
+            'created_at' => $c['created_at'],
+            'date' => date('d/m/Y H:i', strtotime((string)$c['created_at'])),
+            'reponse_a' => $c['reponse_a'],
+            'village' => (string)($c['village'] ?? ''),
+            'mien' => $dev !== '' && $d !== '' && hash_equals($d, $dev),
+            'auteur_contribution' => $devContrib !== '' && $d === $devContrib,
+        ];
+    }
+    repondre(['ok' => true, 'commentaires' => $liste]);
+
+// ------------------------------------------------------------
+// PUBLIC : nouveau commentaire, ou réponse à un commentaire
+// POST JSON : { contribution_id, contribution_type, device_id, auteur, texte, reponse_a? }
+// ------------------------------------------------------------
+case 'add_commentaire':
+    if (!is_array($input)) repondre(['ok' => false, 'erreur' => 'Corps JSON manquant.'], 400);
+    $cid   = (string)($input['contribution_id'] ?? '');
+    $type  = (string)($input['contribution_type'] ?? '');
+    $dev   = limiter((string)($input['device_id'] ?? ''), 64);
+    $aut   = limiter((string)($input['auteur'] ?? ''), 60);
+    $texte = limiter((string)($input['texte'] ?? ''), 500);
+    $rep   = (string)($input['reponse_a'] ?? '');
+    if (!estUuid($cid) || !isset(TABLES[$type]) || $dev === '' || $aut === '') {
+        repondre(['ok' => false, 'erreur' => 'Données invalides.'], 400);
+    }
+    if ($texte === '') repondre(['ok' => false, 'erreur' => 'Le commentaire est vide.'], 400);
+    if (quotaDepasse($pdo)) repondre(['ok' => false, 'erreur' => 'Trop d’envois aujourd’hui. Réessayez demain.'], 429);
+    $table = TABLES[$type];
+    $st = $pdo->prepare("SELECT 1 FROM $table WHERE id = :id AND statut <> 'rejete'");
+    $st->execute([':id' => $cid]);
+    if (!$st->fetchColumn()) repondre(['ok' => false, 'erreur' => 'Contribution introuvable.'], 404);
+    if ($rep !== '') {
+        // Une réponse vise toujours un commentaire de la même contribution
+        $st = $pdo->prepare('SELECT 1 FROM commentaires WHERE id = :r AND contribution_id = :c');
+        $st->execute([':r' => $rep, ':c' => $cid]);
+        if (!estUuid($rep) || !$st->fetchColumn()) $rep = '';
+    }
+    // Double envoi (double appui) : même texte du même appareil dans la minute
+    $st = $pdo->prepare("SELECT 1 FROM commentaires WHERE device_id = :d AND contribution_id = :c
+                         AND texte = :t AND created_at > now() - interval '1 minute'");
+    $st->execute([':d' => $dev, ':c' => $cid, ':t' => $texte]);
+    if ($st->fetchColumn()) repondre(['ok' => true, 'doublon' => true]);
+    $st = $pdo->prepare(
+        "INSERT INTO commentaires (id, contribution_id, contribution_type, device_id, auteur, texte, reponse_a)
+         VALUES (gen_random_uuid(), :c, :ty, :d, :a, :t, NULLIF(:r, '')::uuid)"
+    );
+    $st->execute([':c' => $cid, ':ty' => $type, ':d' => $dev, ':a' => $aut, ':t' => $texte, ':r' => $rep]);
+    repondre(['ok' => true]);
+
+// ------------------------------------------------------------
+// PUBLIC : le contributeur supprime SON commentaire
+// POST JSON : { id, device_id }
+// ------------------------------------------------------------
+case 'supprimer_commentaire':
+    if (!is_array($input)) repondre(['ok' => false, 'erreur' => 'Corps JSON manquant.'], 400);
+    $id  = (string)($input['id'] ?? '');
+    $dev = limiter((string)($input['device_id'] ?? ''), 64);
+    if (!estUuid($id) || $dev === '') repondre(['ok' => false, 'erreur' => 'Données invalides.'], 400);
+    $st = $pdo->prepare("DELETE FROM commentaires WHERE id = :id AND device_id = :d AND device_id <> ''");
+    $st->execute([':id' => $id, ':d' => $dev]);
+    if ($st->rowCount() === 0) repondre(['ok' => false, 'erreur' => 'Suppression impossible.'], 403);
+    // Les réponses restent, rattachées directement à la discussion
+    $pdo->prepare('UPDATE commentaires SET reponse_a = NULL WHERE reponse_a = :id')->execute([':id' => $id]);
+    repondre(['ok' => true]);
+
+// ------------------------------------------------------------
+// ADMIN : suppression d'un commentaire (modération)
+// ------------------------------------------------------------
+case 'delete_commentaire':
+    if (!estAdmin()) repondre(['ok' => false, 'erreur' => 'Mot de passe admin incorrect.'], 403);
+    $id = (string)(($input['id'] ?? '') ?: '');
+    if (!estUuid($id)) repondre(['ok' => false, 'erreur' => 'Identifiant invalide.'], 400);
+    $pdo->prepare('DELETE FROM commentaires WHERE id = :id')->execute([':id' => $id]);
+    $pdo->prepare('UPDATE commentaires SET reponse_a = NULL WHERE reponse_a = :id')->execute([':id' => $id]);
+    repondre(['ok' => true]);
+
+// ------------------------------------------------------------
+// PUBLIC : nouveaux messages pour un contributeur depuis sa dernière visite :
+//  - sur ses contributions ; - en réponse à ses commentaires ;
+//  - dans les discussions auxquelles il a participé.
+// GET ?action=mes_notifications&ids=<id,id…>&depuis=<ms>&dev=<appareil>
+// ------------------------------------------------------------
+case 'mes_notifications':
+    $dev = limiter((string)($_GET['dev'] ?? ''), 64);
+    $ids = array_values(array_filter(array_slice(explode(',', (string)($_GET['ids'] ?? '')), 0, 500), 'estUuid'));
+    $depuis = max(0, (int)($_GET['depuis'] ?? 0)) / 1000;
+    if ($dev === '') repondre(['ok' => true, 'commentaires' => []]);
+    $noms = [];
+    foreach (TABLES as $table) $noms[] = "SELECT id, nom FROM $table";
+    $place = $ids ? implode(',', array_fill(0, count($ids), '?')) : "NULL";
+    $sql = "SELECT c.contribution_id, c.contribution_type, c.auteur, c.created_at, x.nom AS nom_contrib,
+                   CASE WHEN c.contribution_id::text IN ($place) THEN 'ma_contribution'
+                        WHEN p.device_id = ? THEN 'reponse'
+                        ELSE 'discussion' END AS motif
+            FROM commentaires c
+            LEFT JOIN commentaires p ON p.id = c.reponse_a
+            LEFT JOIN (" . implode(' UNION ALL ', $noms) . ") x ON x.id = c.contribution_id
+            WHERE c.created_at > to_timestamp(?) AND c.device_id <> ?
+              AND (c.contribution_id::text IN ($place)
+                   OR p.device_id = ?
+                   OR c.contribution_id IN (SELECT contribution_id FROM commentaires WHERE device_id = ?))
+            ORDER BY c.created_at LIMIT 100";
+    $st = $pdo->prepare($sql);
+    $st->execute(array_merge($ids, [$dev, $depuis, $dev], $ids, [$dev, $dev]));
+    repondre(['ok' => true, 'commentaires' => $st->fetchAll(PDO::FETCH_ASSOC)]);
 
 // ------------------------------------------------------------
 // PUBLIC : ajout d'une contribution → routée vers la bonne table
