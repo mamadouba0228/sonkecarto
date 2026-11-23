@@ -347,6 +347,35 @@ case 'delete':
 // ------------------------------------------------------------
 // ADMIN : contributions en attente (3 couches réunies)
 // ------------------------------------------------------------
+// ------------------------------------------------------------
+// PUBLIC : récupération du compte sur un autre téléphone.
+// Le code de récupération est l'identifiant secret de l'appareil
+// d'origine (122 bits aléatoires) : il prouve la propriété.
+// POST JSON : { code }  →  { ok, compte: {nom, prenom}, ids: [...] }
+// ------------------------------------------------------------
+case 'recuperer':
+    if (!is_array($input)) repondre(['ok' => false, 'erreur' => 'Corps JSON manquant.'], 400);
+    $hex = strtolower(preg_replace('/[^0-9a-fA-F]/', '', (string)($input['code'] ?? '')));
+    if (strlen($hex) !== 32) {
+        repondre(['ok' => false, 'erreur' => 'Code incomplet : il doit compter 32 caractères.'], 400);
+    }
+    $dev = substr($hex, 0, 8) . '-' . substr($hex, 8, 4) . '-' . substr($hex, 12, 4) . '-'
+         . substr($hex, 16, 4) . '-' . substr($hex, 20, 12);
+    $st = $pdo->prepare('SELECT nom, prenom FROM contributeurs WHERE device_id = :dev');
+    $st->execute([':dev' => $dev]);
+    $compte = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    $ids = [];
+    foreach (TABLES as $table) {
+        $st = $pdo->prepare("SELECT id FROM $table WHERE device_id = :dev ORDER BY created_at");
+        $st->execute([':dev' => $dev]);
+        $ids = array_merge($ids, $st->fetchAll(PDO::FETCH_COLUMN));
+    }
+    if (!$compte && !$ids) {
+        usleep(800000); // freine les essais au hasard
+        repondre(['ok' => false, 'erreur' => 'Code inconnu. Vérifiez-le (lettres a à f et chiffres uniquement).'], 404);
+    }
+    repondre(['ok' => true, 'device_id' => $dev, 'compte' => $compte, 'ids' => $ids]);
+
 case 'pending':
     if (!estAdmin()) repondre(['ok' => false, 'erreur' => 'Mot de passe admin incorrect.'], 403);
     // Filtre de statut : en_attente (défaut), valide, rejete, importe_osm ou tous.
