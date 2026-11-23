@@ -728,7 +728,7 @@ function afficher(liste, recadrer = false) {
         + (at.prefecture ? ' (' + echap(at.prefecture) + ')' : '')],
       at.praticabilite && ['🚦', echap(LIBELLES_PRAT_A[at.praticabilite] || at.praticabilite)],
       at.revetement && ['🛤️', echap(LIBELLES_REV_A[at.revetement] || at.revetement)],
-      ['🛰️', 'Tracé sur : ' + ({ esri: 'Esri', google: 'Google Satellite ⚠️', osm: 'Plan OSM' }[at.fond] || 'fond inconnu')],
+      ['🛰️', 'Tracé sur : ' + ({ esri: 'Esri', google: 'Google Satellite ⚠️', osm: 'Plan OSM', gps: 'GPS du téléphone (± ' + (Number(at.precision_gps) || '?') + ' m)' }[at.fond] || 'fond inconnu')],
     ].filter(Boolean);
 
     const div = document.createElement('div');
@@ -1114,6 +1114,13 @@ function verifierFond(c) {
   const fond = (c.attributs || {}).fond;
   if (fond === 'esri') return { ok: true, source: 'Esri World Imagery' };
   if (fond === 'osm') return { ok: true, source: 'local_knowledge' };
+  if (fond === 'gps') {
+    // Relevé sur le terrain avec le GPS du téléphone
+    const p = Number((c.attributs || {}).precision_gps) || 0;
+    if (p && p <= 25) return { ok: true, source: 'survey' };
+    return { ok: 'a_confirmer', source: 'survey',
+      confirmer: `J’ai vérifié sur le fond <b>Esri</b> que la position GPS est juste (précision annoncée : ± ${p || '?'} m).` };
+  }
   if (fond === 'google') {
     return { ok: false, raison: 'Tracée sur Google Satellite : le tracé à partir des images Google est interdit dans OSM. À retracer sur le fond Esri.' };
   }
@@ -1132,7 +1139,7 @@ function raisonBlocageOsm(c) {
 // Tracé à refaire sur Esri : fond Google ou inconnu (et catégorie envoyable dans OSM)
 function doitEtreRetracee(c) {
   const fond = (c.attributs || {}).fond;
-  return fond !== 'esri' && fond !== 'osm' && !!tagsOsm(c);
+  return !['esri', 'osm', 'gps'].includes(fond) && !!tagsOsm(c);
 }
 
 function centreGeo(g) {
@@ -1350,7 +1357,7 @@ async function ouvrirEnvoiOsm(c) {
     + Object.entries(tags).map(([k, v]) => `<tr><td>${echap(k)}</td><td>${echap(v)}</td></tr>`).join('') + '</table>'
     + `<div class="osm-sous">Source</div><div style="font-size:13px">${echap(fond.source)}</div>`;
   if (fond.ok === 'a_confirmer') {
-    html += '<label class="osm-confirme"><input type="checkbox" id="osmPosOk"> J’ai vérifié que la position est juste sur le fond <b>Esri</b> (fond d’origine inconnu pour cette contribution).</label>';
+    html += '<label class="osm-confirme"><input type="checkbox" id="osmPosOk"> ' + (fond.confirmer || 'J’ai vérifié que la position est juste sur le fond <b>Esri</b> (fond d’origine inconnu pour cette contribution).') + '</label>';
   }
   html += '<div class="osm-sous">Doublons possibles dans OSM</div><div id="osmDoublons" style="font-size:13px">Recherche en cours…</div>';
   osmCorps.innerHTML = html;
