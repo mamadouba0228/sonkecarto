@@ -914,13 +914,20 @@ const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const REDIRECTION_OSM = location.origin + location.pathname;
 
 // Retour de la fenêtre de connexion OSM : on transmet le code à la page admin, puis on ferme.
+// OSM coupe le lien avec la fenêtre d'origine (window.opener devient null) : on passe donc par
+// un BroadcastChannel, commun à tous les onglets de ce site.
+const canalOsm = new BroadcastChannel('gc_osm_auth');
 (function () {
   const p = new URLSearchParams(location.search);
-  if (window.opener && p.has('state') && (p.has('code') || p.has('error'))) {
-    window.opener.postMessage({ osmAuth: true, code: p.get('code'), state: p.get('state'), error: p.get('error') },
-      location.origin);
-    window.close();
-  }
+  if (!p.has('state') || !(p.has('code') || p.has('error'))) return;
+  const message = { osmAuth: true, code: p.get('code'), state: p.get('state'), error: p.get('error') };
+  canalOsm.postMessage(message);
+  if (window.opener) window.opener.postMessage(message, location.origin);
+  history.replaceState(null, '', location.pathname); // retire le code de la barre d'adresse
+  window.close();
+  // Si le navigateur refuse de fermer la fenêtre, on le dit simplement.
+  document.body.innerHTML = '<div style="font:16px system-ui;padding:40px;text-align:center">'
+    + '✓ Connexion à OpenStreetMap transmise.<br>Vous pouvez fermer cette fenêtre et revenir à la page d’administration.</div>';
 })();
 
 let osmJeton = localStorage.getItem('gc_osm_jeton') || '';
@@ -949,9 +956,13 @@ async function connexionOsm() {
     alert('Autorisez les fenêtres pop-up pour cette page, puis réessayez.');
     return;
   }
+  let traite = false;
   const ecoute = async e => {
-    if (e.origin !== location.origin || !e.data || !e.data.osmAuth) return;
+    // Le BroadcastChannel ne relie que des pages de ce site ; pour postMessage, on vérifie l'origine.
+    if ((e.target !== canalOsm && e.origin !== location.origin) || !e.data || !e.data.osmAuth || traite) return;
+    traite = true;
     window.removeEventListener('message', ecoute);
+    canalOsm.removeEventListener('message', ecoute);
     if (e.data.error || e.data.state !== etat) { alert('Connexion OSM annulée ou refusée.'); return; }
     try {
       const r = await fetch(OSM_SERVEUR + '/oauth2/token', {
@@ -972,6 +983,7 @@ async function connexionOsm() {
     }
   };
   window.addEventListener('message', ecoute);
+  canalOsm.addEventListener('message', ecoute);
 }
 
 function deconnexionOsm() {
