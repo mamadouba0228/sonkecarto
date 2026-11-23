@@ -168,6 +168,31 @@
   .osm-actions .btn { flex: 1; font-family: inherit; }
   .osm-actions .btn:disabled { opacity: .45; cursor: not-allowed; }
   @media (max-width: 800px) { #btnOsm { padding: 5px 9px; font-size: 11.5px; } }
+  .b-osm.bloque { background: #EDF0F4; color: #8A93A3; }
+  .b-retracer { background: var(--vert-clair); color: var(--vert-fonce); }
+  .b-retracer:hover { background: #FBE1CC; }
+  .fiche .actions { flex-wrap: wrap; }
+  .fiche .actions button { flex: 1 1 calc(33% - 6px); }
+
+  /* Retracé sur Esri */
+  #admin { position: relative; }
+  #map.retrace { cursor: crosshair; }
+  #barreRetrace {
+    position: absolute; left: 12px; right: 432px; bottom: 16px; z-index: 1000; display: none;
+    align-items: center; gap: 12px; background: #fff; border-radius: 14px; padding: 10px 12px;
+    box-shadow: 0 6px 22px rgba(0,0,0,.3);
+  }
+  #barreRetrace.actif { display: flex; }
+  .rt-info { flex: 1; min-width: 0; font-size: 13px; line-height: 1.35; }
+  .rt-info b { display: block; font-size: 14px; }
+  .rt-info span { color: #667085; }
+  .rt-boutons { display: flex; align-items: center; gap: 6px; }
+  #rtCompteur { font-size: 13px; color: #667085; min-width: 44px; text-align: center; }
+  #barreRetrace button { border: none; background: #EDF1F6; border-radius: 9px; height: 38px; min-width: 38px; padding: 0 10px; font-size: 15px; cursor: pointer; font-family: inherit; }
+  #barreRetrace button:hover { background: #DDE5EF; }
+  #barreRetrace button.ok { background: var(--pin-valide); color: #fff; font-size: 13.5px; font-weight: 700; padding: 0 14px; }
+  #barreRetrace button.ok:disabled { opacity: .45; cursor: not-allowed; }
+  @media (max-width: 800px) { #barreRetrace { right: 12px; bottom: auto; top: 12px; flex-wrap: wrap; } }
 
   /* Marqueurs et fiches sur la carte */
   .pin-wrap { background: none; border: none; }
@@ -246,6 +271,16 @@
 
 <div id="admin">
   <div id="map"></div>
+  <!-- Barre de retracé sur Esri -->
+  <div id="barreRetrace">
+    <div class="rt-info"><b id="rtTitre">Retracer</b><span id="rtAide"></span></div>
+    <div class="rt-boutons">
+      <span id="rtCompteur">0 pt</span>
+      <button type="button" id="rtUndo" title="Retirer le dernier point">↩</button>
+      <button type="button" id="rtAbandon" title="Abandonner">✕</button>
+      <button type="button" id="rtValider" class="ok">✓ Enregistrer</button>
+    </div>
+  </div>
   <aside id="cote">
     <header><span id="titrePanneau">En attente de validation</span><span id="nbFiches"></span><button id="btnRafraichir" title="Rafraîchir">↻</button></header>
     <div id="filtres">
@@ -254,6 +289,7 @@
       <button class="filtre" data-statut="rejete">✕ Rejetées</button>
       <button class="filtre" data-statut="importe_osm">🌍 Importées</button>
       <button class="filtre" data-statut="tous">Toutes</button>
+      <button class="filtre" data-statut="osm" title="Validées, avec un équivalent OSM et un tracé autorisé">🌍 Envoyables vers OSM</button>
       <button class="filtre" data-statut="stats">📊 Tableau de bord</button>
     </div>
     <div id="pendingListe"><div id="vide">Chargement…</div></div>
@@ -286,7 +322,7 @@
 <script>
 const API = 'api.php';
 let token = '';
-let carte = null, couche = null;
+let carte = null, couche = null, fondsCarte = null;
 let pending = [];
 
 const TYPES = [
@@ -591,6 +627,7 @@ function initCarte() {
   });
   
   couche = L.layerGroup().addTo(carte);
+  fondsCarte = { esri: fondSatellite, google: fondGoogle, osm: fondPlan };
   setTimeout(() => carte.invalidateSize(), 100);
 }
 
@@ -686,7 +723,9 @@ function afficher(liste) {
         ${c.statut !== 'valide' ? '<button class="b-ok">✓ Valider</button>' : ''}
         ${c.statut !== 'rejete' ? '<button class="b-non">✕ Rejeter</button>' : ''}
         ${c.statut !== 'en_attente' ? '<button class="b-att">↺ En attente</button>' : ''}
-        ${c.statut === 'valide' ? '<button class="b-osm">🌍 Envoyer vers OSM</button>' : ''}
+        ${c.statut === 'valide'
+          ? `<button class="b-osm${raisonBlocageOsm(c) ? ' bloque' : ''}" title="${echap(raisonBlocageOsm(c) || 'Vérifier puis envoyer dans OpenStreetMap')}">🌍 Envoyer vers OSM</button>` : ''}
+        ${['valide', 'en_attente'].includes(c.statut) && doitEtreRetracee(c) ? '<button class="b-retracer" title="Redessiner sur l’imagerie Esri pour pouvoir l’envoyer dans OSM">✏️ Retracer sur Esri</button>' : ''}
       </div>`;
     div.querySelector('.titre').onclick =
     div.querySelector('.b-voir').onclick = () => {
@@ -701,6 +740,8 @@ function afficher(liste) {
     if (bAtt) bAtt.onclick = () => changerStatut(c, 'en_attente');
     const bOsm = div.querySelector('.b-osm');
     if (bOsm) bOsm.onclick = () => ouvrirEnvoiOsm(c);
+    const bRetracer = div.querySelector('.b-retracer');
+    if (bRetracer) bRetracer.onclick = () => demarrerRetrace(c);
     cont.appendChild(div);
   }
   if (bounds.length) carte.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
@@ -719,7 +760,7 @@ async function changerStatut(c, statut) {
 let filtreStatut = 'en_attente';
 const TITRES_FILTRE = {
   en_attente: 'En attente de validation', valide: 'Contributions validées',
-  rejete: 'Contributions rejetées', importe_osm: 'Importées dans OSM', tous: 'Toutes les contributions',
+  rejete: 'Contributions rejetées', importe_osm: 'Importées dans OSM', tous: 'Toutes les contributions', osm: 'Envoyables vers OSM',
 };
 
 const LIBELLES_PRAT_A = {
@@ -734,7 +775,7 @@ async function rafraichir() {
   const r = await fetch(API + '?action=pending&statut=' + filtreStatut
     + '&token=' + encodeURIComponent(token));
   const d = await r.json();
-  if (d.ok) afficher(d.contributions);
+  if (d.ok) afficher(filtreStatut === 'osm' ? d.contributions.filter(c => !raisonBlocageOsm(c)) : d.contributions);
 }
 document.getElementById('btnRafraichir').onclick = rafraichir;
 
@@ -1046,6 +1087,20 @@ function verifierFond(c) {
   return { ok: false, raison: 'Fond de carte d’origine inconnu (contribution antérieure, probablement tracée sur Google). À retracer sur le fond Esri.' };
 }
 
+// Raison pour laquelle une contribution ne peut pas aller dans OSM (null si elle le peut,
+// éventuellement après la vérification demandée pour les points anciens)
+function raisonBlocageOsm(c) {
+  if (!tagsOsm(c)) return 'Catégorie sans équivalent dans OpenStreetMap';
+  const fond = verifierFond(c);
+  return fond.ok === false ? fond.raison : null;
+}
+
+// Tracé à refaire sur Esri : fond Google ou inconnu (et catégorie envoyable dans OSM)
+function doitEtreRetracee(c) {
+  const fond = (c.attributs || {}).fond;
+  return fond !== 'esri' && fond !== 'osm' && !!tagsOsm(c);
+}
+
 function centreGeo(g) {
   if (g.type === 'Point') return g.coordinates;
   const pts = g.type === 'LineString' ? g.coordinates : g.coordinates[0];
@@ -1126,6 +1181,110 @@ async function envoyerVersOsm(c, tags, source) {
     await requeteOsm('PUT', `changeset/${changeset}/close`).catch(() => {});
   }
 }
+
+// ----- Retracé d'une contribution sur l'imagerie Esri -----
+let retrace = null; // { c, pts, guide, dessin }
+const barreRetrace = document.getElementById('barreRetrace');
+const rtValider = document.getElementById('rtValider');
+
+function dessinerRetrace() {
+  const r = retrace, type = r.c.geom_type;
+  r.dessin.clearLayers();
+  if (type !== 'point' && r.pts.length > 1) {
+    const style = { color: '#C2570A', weight: 3, interactive: false };
+    (type === 'polygone' && r.pts.length > 2 ? L.polygon(r.pts, { ...style, fillOpacity: .15 }) : L.polyline(r.pts, style))
+      .addTo(r.dessin);
+  }
+  r.pts.forEach(p => L.circleMarker(p, { radius: 6, color: '#fff', weight: 2, fillColor: '#C2570A', fillOpacity: 1, interactive: false }).addTo(r.dessin));
+  document.getElementById('rtCompteur').textContent = r.pts.length + ' pt';
+  rtValider.disabled = r.pts.length < { point: 1, ligne: 2, polygone: 3 }[type];
+}
+
+function clicRetrace(e) {
+  if (!retrace) return;
+  const p = [e.latlng.lat, e.latlng.lng];
+  if (retrace.c.geom_type === 'point') retrace.pts = [p];
+  else retrace.pts.push(p);
+  dessinerRetrace();
+}
+
+function demarrerRetrace(c) {
+  arreterRetrace();
+  // Seule l'imagerie Esri est affichée pendant le retracé
+  Object.values(fondsCarte).forEach(f => carte.removeLayer(f));
+  fondsCarte.esri.addTo(carte);
+  carte.removeLayer(couche);
+
+  // Ancien tracé en pointillés blancs, comme guide
+  const ancien = coordsLeaflet(c.geom_geojson);
+  const guide = L.layerGroup().addTo(carte);
+  if (c.geom_type === 'point') {
+    L.circleMarker(ancien[0], { radius: 10, color: '#fff', weight: 2, dashArray: '3 3', fillOpacity: 0, interactive: false }).addTo(guide);
+  } else {
+    (c.geom_type === 'polygone' ? L.polygon : L.polyline)(ancien,
+      { color: '#fff', weight: 2, dashArray: '6 6', fill: false, interactive: false }).addTo(guide);
+  }
+  retrace = { c, pts: [], guide, dessin: L.layerGroup().addTo(carte) };
+
+  const cat = catInfo(c.categorie);
+  document.getElementById('rtTitre').textContent = '✏️ Retracer « ' + (c.nom || cat.label) + ' » sur Esri';
+  document.getElementById('rtAide').textContent = {
+    point: 'Touchez la position exacte du lieu sur l’image (cercle blanc = ancienne position).',
+    ligne: 'Touchez la carte point par point le long de la ligne (pointillés blancs = ancien tracé).',
+    polygone: 'Touchez la carte pour dessiner le contour (pointillés blancs = ancien tracé).',
+  }[c.geom_type];
+  barreRetrace.classList.add('actif');
+  document.getElementById('map').classList.add('retrace');
+  carte.fitBounds(c.geom_type === 'point' ? L.latLng(ancien[0]).toBounds(150) : L.latLngBounds(ancien),
+    { padding: [60, 60], maxZoom: 18 });
+  carte.on('click', clicRetrace);
+  dessinerRetrace();
+}
+
+function arreterRetrace() {
+  if (!retrace) return;
+  carte.off('click', clicRetrace);
+  carte.removeLayer(retrace.guide);
+  carte.removeLayer(retrace.dessin);
+  couche.addTo(carte);
+  retrace = null;
+  barreRetrace.classList.remove('actif');
+  document.getElementById('map').classList.remove('retrace');
+}
+
+document.getElementById('rtUndo').onclick = () => { if (retrace) { retrace.pts.pop(); dessinerRetrace(); } };
+document.getElementById('rtAbandon').onclick = arreterRetrace;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && retrace) arreterRetrace(); });
+
+rtValider.onclick = async () => {
+  const r = retrace;
+  if (!r) return;
+  const lonLat = r.pts.map(p => [Number(p[1].toFixed(7)), Number(p[0].toFixed(7))]);
+  const geo = r.c.geom_type === 'point' ? { type: 'Point', coordinates: lonLat[0] }
+    : r.c.geom_type === 'ligne' ? { type: 'LineString', coordinates: lonLat }
+    : { type: 'Polygon', coordinates: [[...lonLat, lonLat[0]]] };
+  rtValider.disabled = true;
+  rtValider.textContent = '⏳ Enregistrement…';
+  try {
+    const rep = await fetch(API + '?action=set_geom&token=' + encodeURIComponent(token), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: r.c.id, geom_type: r.c.geom_type, geom_geojson: geo }),
+    });
+    const d = await rep.json();
+    if (!d.ok) throw new Error(d.erreur || 'erreur du serveur');
+    arreterRetrace();
+    await rafraichir();
+    if (r.c.statut === 'valide' && confirm('Tracé enregistré sur Esri. Ouvrir l’envoi vers OpenStreetMap maintenant ?')) {
+      ouvrirEnvoiOsm({ ...r.c, geom_geojson: geo, attributs: { ...(r.c.attributs || {}), fond: 'esri' } });
+    }
+  } catch (e) {
+    alert('Enregistrement impossible : ' + e.message);
+    rtValider.disabled = false;
+  } finally {
+    rtValider.textContent = '✓ Enregistrer';
+  }
+};
 
 // ----- Fenêtre de vérification -----
 const osmModal = document.getElementById('osmModal');

@@ -95,6 +95,25 @@ function quotaDepasse(PDO $pdo, int $max = 300): bool {
     }
 }
 
+// Contrôle d'une géométrie GeoJSON Point / LineString / Polygon (coordonnées WGS84)
+function geometrieValide(array $geo): bool {
+    $pointOk = fn($p) => is_array($p) && count($p) >= 2 && is_numeric($p[0]) && is_numeric($p[1])
+        && abs((float)$p[0]) <= 180 && abs((float)$p[1]) <= 90;
+    $c = $geo['coordinates'] ?? null;
+    switch ($geo['type'] ?? '') {
+        case 'Point':
+            return $pointOk($c);
+        case 'LineString':
+            return is_array($c) && count($c) >= 2 && count($c) <= 5000 && count(array_filter($c, $pointOk)) === count($c);
+        case 'Polygon':
+            $a = $c[0] ?? null;
+            return is_array($c) && count($c) === 1 && is_array($a) && count($a) >= 4 && count($a) <= 5000
+                && count(array_filter($a, $pointOk)) === count($a)
+                && (float)$a[0][0] === (float)end($a)[0] && (float)$a[0][1] === (float)end($a)[1];
+    }
+    return false;
+}
+
 function repondre(array $data, int $code = 200): void {
     http_response_code($code);
     echo json_encode($data);
@@ -362,6 +381,34 @@ case 'setstatut':
         $st->execute([':s' => $statut, ':id' => $id]);
         if ($st->rowCount() > 0) repondre(['ok' => true, 'table' => $table]);
     }
+    repondre(['ok' => false, 'erreur' => 'Contribution introuvable.'], 404);
+
+// ------------------------------------------------------------
+// ADMIN : remplace la géométrie d'une contribution retracée par
+// le modérateur sur l'imagerie Esri (seule autorisée pour OSM).
+// POST JSON : { id, geom_type, geom_geojson }
+// ------------------------------------------------------------
+case 'set_geom':
+    if (!estAdmin()) repondre(['ok' => false, 'erreur' => 'Mot de passe admin incorrect.'], 403);
+    if (!is_array($input)) repondre(['ok' => false, 'erreur' => 'Corps JSON manquant.'], 400);
+    $id   = (string)($input['id'] ?? '');
+    $type = (string)($input['geom_type'] ?? '');
+    $geo  = $input['geom_geojson'] ?? null;
+    if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $id)) {
+        repondre(['ok' => false, 'erreur' => 'Identifiant invalide.'], 400);
+    }
+    if (!isset(TABLES[$type]) || !is_array($geo) || ($geo['type'] ?? '') !== GEOJSON_ATTENDU[$type]
+        || !geometrieValide($geo)) {
+        repondre(['ok' => false, 'erreur' => 'Géométrie invalide.'], 400);
+    }
+    $table = TABLES[$type];
+    $st = $pdo->prepare(
+        "UPDATE $table SET geom_geojson = :geo,
+                attributs = COALESCE(attributs, '{}'::jsonb) || '{\"fond\": \"esri\"}'::jsonb
+         WHERE id = :id"
+    );
+    $st->execute([':geo' => json_encode($geo), ':id' => $id]);
+    if ($st->rowCount() > 0) repondre(['ok' => true]);
     repondre(['ok' => false, 'erreur' => 'Contribution introuvable.'], 404);
 
 // ------------------------------------------------------------
