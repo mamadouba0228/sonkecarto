@@ -721,6 +721,8 @@ function afficher(liste, recadrer = false) {
     const date = new Date(String(c.created_at).replace(' ', 'T'));
     const infos = [
       auteur && ['👤', echap(auteur)],
+      (c.c_village || c.c_sp) && ['🏡', 'Habite : ' + echap([c.c_village, c.c_sp].filter(Boolean).join(' — '))
+        + (c.c_pref ? ' (' + echap(c.c_pref) + ')' : '')],
       c.c_tel && ['📞', echap(c.c_tel)],
       c.c_email && ['✉️', echap(c.c_email)],
       !isNaN(date) && ['📅', date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })],

@@ -114,6 +114,31 @@ function geometrieValide(array $geo): bool {
     return false;
 }
 
+// Compte contributeur : nom, prénom, sous-préfecture et village obligatoires
+// (les anciens comptes « nom + prénom » restent acceptés tant qu'ils ne sont pas complétés).
+function enregistrerCompte(PDO $pdo, string $dev, array $c, bool $exigerComplet = false): bool {
+    $champ = fn($k, $max) => limiter(trim((string)($c[$k] ?? '')), $max);
+    $nom = $champ('nom', 100); $prenom = $champ('prenom', 100);
+    $pref = $champ('prefecture', 100); $sp = $champ('sous_prefecture', 100); $vil = $champ('village', 150);
+    $tel = $champ('telephone', 30); $mail = $champ('email', 120);
+    if ($mail !== '' && !filter_var($mail, FILTER_VALIDATE_EMAIL)) $mail = '';
+    if ($nom === '' || $prenom === '') return false;
+    if ($exigerComplet && ($sp === '' || $vil === '')) return false;
+    // Un ancien compte incomplet ne doit pas effacer un village déjà connu
+    $st = $pdo->prepare(
+        "INSERT INTO contributeurs (device_id, nom, prenom, telephone, email, prefecture, sous_prefecture, village)
+         VALUES (:d, :n, :p, :t, :m, :pf, :sp, :v)
+         ON CONFLICT (device_id) DO UPDATE
+           SET nom = :n, prenom = :p, telephone = :t, email = :m,
+               prefecture = COALESCE(NULLIF(:pf, ''), contributeurs.prefecture),
+               sous_prefecture = COALESCE(NULLIF(:sp, ''), contributeurs.sous_prefecture),
+               village = COALESCE(NULLIF(:v, ''), contributeurs.village)"
+    );
+    $st->execute([':d' => $dev, ':n' => $nom, ':p' => $prenom, ':t' => $tel, ':m' => $mail,
+                  ':pf' => $pref, ':sp' => $sp, ':v' => $vil]);
+    return true;
+}
+
 function repondre(array $data, int $code = 200): void {
     http_response_code($code);
     echo json_encode($data);
@@ -254,23 +279,24 @@ case 'add':
     ]);
     // Créer/mettre à jour le compte contributeur lié à cet appareil
     if ($dev !== '' && isset($input['compte']) && is_array($input['compte'])) {
-        $cNom    = limiter((string)($input['compte']['nom'] ?? ''), 100);
-        $cPrenom = limiter((string)($input['compte']['prenom'] ?? ''), 100);
-        $cTel    = limiter((string)($input['compte']['telephone'] ?? ''), 30);
-        $cMail   = limiter((string)($input['compte']['email'] ?? ''), 120);
-        if ($cMail !== '' && !filter_var($cMail, FILTER_VALIDATE_EMAIL)) $cMail = '';
-        if ($cNom !== '' && $cPrenom !== '') {
-            $stc = $pdo->prepare(
-                "INSERT INTO contributeurs (device_id, nom, prenom, telephone, email)
-                 VALUES (:d, :n, :p, :t, :m)
-                 ON CONFLICT (device_id) DO UPDATE
-                   SET nom = :n, prenom = :p, telephone = :t, email = :m"
-            );
-            $stc->execute([':d' => $dev, ':n' => $cNom, ':p' => $cPrenom,
-                           ':t' => $cTel, ':m' => $cMail]);
-        }
+        enregistrerCompte($pdo, $dev, $input['compte']);
     }
     repondre(['ok' => true, 'id' => $id, 'table' => $table]);
+
+// ------------------------------------------------------------
+// PUBLIC : enregistrement / mise à jour du compte contributeur
+// (sans attendre une contribution). POST JSON : { device_id, compte }
+// ------------------------------------------------------------
+case 'compte':
+    if (!is_array($input) || !is_array($input['compte'] ?? null)) {
+        repondre(['ok' => false, 'erreur' => 'Corps JSON manquant.'], 400);
+    }
+    $dev = limiter((string)($input['device_id'] ?? ''), 64);
+    if ($dev === '') repondre(['ok' => false, 'erreur' => 'Identifiant appareil manquant.'], 400);
+    if (!enregistrerCompte($pdo, $dev, $input['compte'], true)) {
+        repondre(['ok' => false, 'erreur' => 'Nom, prénom, sous-préfecture et village sont obligatoires.'], 400);
+    }
+    repondre(['ok' => true]);
 
 // ------------------------------------------------------------
 // PUBLIC : le contributeur MODIFIE sa propre contribution,
@@ -361,7 +387,7 @@ case 'recuperer':
     }
     $dev = substr($hex, 0, 8) . '-' . substr($hex, 8, 4) . '-' . substr($hex, 12, 4) . '-'
          . substr($hex, 16, 4) . '-' . substr($hex, 20, 12);
-    $st = $pdo->prepare('SELECT nom, prenom FROM contributeurs WHERE device_id = :dev');
+    $st = $pdo->prepare('SELECT nom, prenom, telephone, email, prefecture, sous_prefecture, village FROM contributeurs WHERE device_id = :dev');
     $st->execute([':dev' => $dev]);
     $compte = $st->fetch(PDO::FETCH_ASSOC) ?: null;
     $ids = [];
@@ -390,7 +416,8 @@ case 'pending':
         $parts[] = "SELECT '$type' AS geom_type, t.id, t.geom_geojson, t.categorie, t.nom,
                            t.notes, t.contributeur, t.attributs, t.photo, t.statut, t.created_at,
                            co.prenom AS c_prenom, co.nom AS c_nom,
-                           co.telephone AS c_tel, co.email AS c_email
+                           co.telephone AS c_tel, co.email AS c_email,
+                           co.village AS c_village, co.sous_prefecture AS c_sp, co.prefecture AS c_pref
                     FROM $table t
                     LEFT JOIN contributeurs co ON co.device_id = t.device_id
                     WHERE $cond";
