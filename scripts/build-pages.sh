@@ -19,7 +19,7 @@ sed -e "s|const e=\"api.php\"|const e=\"$BACKEND/api.php\"|" index.html > "$OUT/
 sed -e "s|const API = 'api.php';|const API = '$BACKEND/api.php';|" admin.html > "$OUT/admin.html"
 sed -e "s|fetch('api.php?|fetch('$BACKEND/api.php?|" stats.html > "$OUT/stats.html"
 
-cp manifest.webmanifest icone-192.png icone-512.png icone-maskable-512.png "$OUT/"
+cp sw.js manifest.webmanifest icone-192.png icone-512.png icone-maskable-512.png "$OUT/"
 
 # ── Spécificités de la démo ──
 if [ "$CHANNEL" = "demo" ]; then
