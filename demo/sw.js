@@ -15,7 +15,7 @@
 //
 // Changer VERSION purge les anciens caches de l'application.
 // ============================================================
-const VERSION = 'v2';
+const VERSION = 'v3';
 const PORTEE = self.registration.scope;          // démo et stable ont chacun leur cache
 const CACHE_APP = `gc-app-${VERSION}-${PORTEE}`;
 const CACHE_DONNEES = `gc-donnees-${PORTEE}`;
@@ -24,12 +24,15 @@ const MAX_TUILES = 3000;
 const DELAI_PAGE = 4000;    // ms avant de servir la page en cache
 const DELAI_LISTE = 8000;   // ms avant de servir la liste en cache
 
-const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
+const CDN = 'https://cdnjs.cloudflare.com/ajax/libs/';
+const LEAFLET = CDN + 'leaflet/1.9.4/';
 const COQUILLE = [
   './', './index.html', './stats.html', './manifest.webmanifest',
   './icone-192.png', './icone-512.png', './icone-maskable-512.png',
   LEAFLET + 'leaflet.min.js', LEAFLET + 'leaflet.min.css',
   LEAFLET + 'images/layers.png', LEAFLET + 'images/layers-2x.png',
+  CDN + 'leaflet.markercluster/1.5.3/leaflet.markercluster.js',
+  CDN + 'leaflet.markercluster/1.5.3/MarkerCluster.css',
 ];
 const HOTES_TUILES = ['tile.openstreetmap.org', 'server.arcgisonline.com'];
 
@@ -116,7 +119,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  if (url.href.startsWith(LEAFLET)) {
+  if (url.href.startsWith(CDN)) {
     e.respondWith(caches.match(url.href).then((r) => r || fetch(req)));
     return;
   }
