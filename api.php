@@ -294,14 +294,25 @@ case 'update':
         repondre(['ok' => false, 'erreur' => 'Données invalides.'], 400);
     }
     $type = (string)($input['geom_type'] ?? '');
+    // Nouvelle forme / position (facultative) : même contrôle que pour l'admin
+    $geo = $input['geom_geojson'] ?? null;
+    $geoJson = null;
+    if ($geo !== null) {
+        if (!isset(TABLES[$type]) || !is_array($geo) || ($geo['type'] ?? '') !== GEOJSON_ATTENDU[$type]
+            || !geometrieValide($geo)) {
+            repondre(['ok' => false, 'erreur' => 'Géométrie invalide.'], 400);
+        }
+        $geoJson = json_encode($geo);
+    }
     $tables = isset(TABLES[$type]) ? [TABLES[$type]] : array_values(TABLES);
     foreach ($tables as $table) {
         $st = $pdo->prepare(
-            "UPDATE $table SET categorie = :cat, nom = :nom, notes = :note, attributs = :attrs
+            "UPDATE $table SET categorie = :cat, nom = :nom, notes = :note, attributs = :attrs,
+                    geom_geojson = COALESCE(CAST(:geo AS jsonb), geom_geojson)
              WHERE id = :id AND device_id = :dev AND device_id <> '' AND statut = 'en_attente'"
         );
         $st->execute([':cat' => $cat, ':nom' => $nom, ':note' => $note,
-                      ':attrs' => $attrsJson, ':id' => $id, ':dev' => $dev]);
+                      ':attrs' => $attrsJson, ':geo' => $geoJson, ':id' => $id, ':dev' => $dev]);
         if ($st->rowCount() > 0) repondre(['ok' => true]);
     }
     repondre(['ok' => false, 'erreur' => 'Modification impossible : contribution déjà traitée ou non trouvée.'], 403);
